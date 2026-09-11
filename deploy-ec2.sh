@@ -19,14 +19,24 @@ REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 INSTALL_DIR=/opt/alpha-analyser
 WEB_ROOT=/var/www/alpha-analyser
 
+install_pkgs() {
+  local pkgs=("$@")
+  if command -v dnf &>/dev/null; then
+    dnf install -y "${pkgs[@]}"
+  elif command -v yum &>/dev/null; then
+    yum install -y "${pkgs[@]}"
+  else
+    echo "Unsupported OS — need dnf or yum (Amazon Linux / RHEL)"
+    exit 1
+  fi
+}
+
 echo "==> Installing system packages (Amazon Linux)..."
-if command -v dnf &>/dev/null; then
-  dnf install -y nginx python3 python3-pip nodejs npm rsync curl
-elif command -v yum &>/dev/null; then
-  yum install -y nginx python3 python3-pip nodejs npm rsync curl
-else
-  echo "Unsupported OS — need dnf or yum (Amazon Linux / RHEL)"
-  exit 1
+# Do NOT install 'curl' — AL2023 ships curl-minimal and they conflict.
+install_pkgs nginx python3 python3-pip rsync
+# nodejs/npm — install if missing (optional group on some AMIs)
+if ! command -v node &>/dev/null || ! command -v npm &>/dev/null; then
+  install_pkgs nodejs npm || install_pkgs nodejs
 fi
 
 echo "==> Syncing app to ${INSTALL_DIR}..."
@@ -85,7 +95,17 @@ if systemctl is-active --quiet firewalld 2>/dev/null; then
   firewall-cmd --reload 2>/dev/null || true
 fi
 
-PUBLIC_IP="$(curl -sf --max-time 2 http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || true)"
+PUBLIC_IP=""
+if command -v curl &>/dev/null; then
+  TOKEN="$(curl -sf --max-time 2 -X PUT "http://169.254.169.254/latest/api/token" \
+    -H "X-aws-ec2-metadata-token-ttl-seconds: 60" 2>/dev/null || true)"
+  if [[ -n "$TOKEN" ]]; then
+    PUBLIC_IP="$(curl -sf --max-time 2 -H "X-aws-ec2-metadata-token: $TOKEN" \
+      http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || true)"
+  else
+    PUBLIC_IP="$(curl -sf --max-time 2 http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || true)"
+  fi
+fi
 
 echo ""
 echo "=============================================="
