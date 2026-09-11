@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Login — AlphaANALYSER</title>
+  <link rel="stylesheet" href="/src/auth-pages.css" />
+</head>
+<body>
+  <div class="auth-wrap">
+    <form class="auth-card" id="loginForm">
+      <div class="auth-brand">AlphaANALYSER</div>
+      <div class="auth-sub">Sign in to access the chart analyser</div>
+      <div class="auth-field">
+        <label for="email">Email</label>
+        <input id="email" type="email" autocomplete="email" required />
+      </div>
+      <div class="auth-field">
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="current-password" required />
+      </div>
+      <button class="auth-btn" type="submit" id="btnSubmit">Sign in</button>
+      <div class="auth-msg" id="msg"></div>
+      <div class="auth-link">No account? <a href="/signup.html">Create one</a></div>
+    </form>
+  </div>
+  <script type="module" src="/src/login.ts"></script>
+</body>
+</html>

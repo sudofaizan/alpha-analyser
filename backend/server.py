@@ -14,15 +14,6 @@ from flask_cors import CORS
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
-from alpha_analyser_engine import HTF_MAP, build_render_spec  # noqa: E402
-from mt5_upstream import candles_to_bars, fetch_analysis, fetch_candles  # noqa: E402
-
-app = Flask(__name__)
-CORS(app)
-
-API_KEY = os.environ.get("ANALYSER_API_KEY", "alphafx")
-PORT = int(os.environ.get("PORT", "8090"))
-
 
 def _load_dotenv() -> None:
     env = ROOT / ".env"
@@ -36,6 +27,23 @@ def _load_dotenv() -> None:
         k, v = k.strip(), v.strip().strip('"').strip("'")
         if k and k not in os.environ:
             os.environ[k] = v
+
+
+_load_dotenv()
+
+from alpha_analyser_engine import HTF_MAP, build_render_spec  # noqa: E402
+from auth_db import ensure_admin_bootstrap, init_db  # noqa: E402
+from auth_routes import auth_bp, admin_bp, subscription_required  # noqa: E402
+from mt5_upstream import candles_to_bars, fetch_analysis, fetch_candles  # noqa: E402
+
+app = Flask(__name__)
+CORS(app, supports_credentials=True)
+
+API_KEY = os.environ.get("ANALYSER_API_KEY", "alphafx")
+PORT = int(os.environ.get("PORT", "8090"))
+
+app.register_blueprint(auth_bp)
+app.register_blueprint(admin_bp)
 
 
 def require_key() -> tuple[dict | None, tuple | None]:
@@ -100,14 +108,13 @@ def health():
         "ok": True,
         "service": "alpha-analyser",
         "mt5_vps": os.environ.get("MT5_VPS_URL", "http://13.42.76.172:8080"),
+        "auth": True,
     })
 
 
 @app.route("/getChartBundle")
-def get_chart_bundle():
-    _, err = require_key()
-    if err:
-        return err
+@subscription_required
+def get_chart_bundle(_user):
     symbol = request.args.get("symbol", "").strip()
     if not symbol:
         return jsonify({"ok": False, "error": "symbol required"}), 400
@@ -120,8 +127,11 @@ def get_chart_bundle():
     return jsonify(result), (200 if result.get("ok") else 400)
 
 
+init_db()
+ensure_admin_bootstrap()
+
 if __name__ == "__main__":
-    _load_dotenv()
     print(f"Alpha Analyser API on :{PORT}")
     print(f"  MT5 upstream: {os.environ.get('MT5_VPS_URL', 'http://13.42.76.172:8080')}")
+    print(f"  Auth DB: {os.environ.get('ANALYSER_DB_PATH', ROOT / 'analyser.db')}")
     app.run(host="0.0.0.0", port=PORT, debug=os.environ.get("FLASK_DEBUG") == "1")

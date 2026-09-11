@@ -71,6 +71,11 @@ mkdir -p "$WEB_ROOT"
 rsync -a --delete dist/ "$WEB_ROOT/"
 chown -R nginx:nginx "$WEB_ROOT" 2>/dev/null || chown -R www-data:www-data "$WEB_ROOT" 2>/dev/null || true
 
+if [[ ! -f "$WEB_ROOT/login.html" ]]; then
+  echo "ERROR: frontend build missing login.html — auth pages not deployed"
+  exit 1
+fi
+
 echo "==> nginx on port 80..."
 cp "$INSTALL_DIR/nginx/alpha-analyser.conf" /etc/nginx/conf.d/alpha-analyser.conf
 rm -f /etc/nginx/conf.d/default.conf 2>/dev/null || true
@@ -111,9 +116,10 @@ echo ""
 echo "=============================================="
 echo " Alpha Analyser deployed"
 echo "=============================================="
-echo "  Web UI:  http://${PUBLIC_IP:-YOUR_EC2_PUBLIC_IP}/"
+echo "  Login:   http://${PUBLIC_IP:-YOUR_EC2_PUBLIC_IP}/login.html"
+echo "  App:     http://${PUBLIC_IP:-YOUR_EC2_PUBLIC_IP}/index.html"
 echo "  Health:  http://${PUBLIC_IP:-YOUR_EC2_PUBLIC_IP}/health"
-echo "  API key: alphafx (header X-API-Key)"
+echo "  Auth DB: ${INSTALL_DIR}/backend/analyser.db"
 echo ""
 echo "  Edit MT5 upstream: ${INSTALL_DIR}/backend/.env"
 echo "  Logs: journalctl -u alpha-analyser-api -f"

@@ -1,0 +1,172 @@
+:root {
+  --bg: #0b0f14;
+  --panel: #11161d;
+  --border: #1e2836;
+  --text: #d8e1ed;
+  --muted: #7d8da3;
+  --gold: #f0b429;
+  --green: #22c55e;
+  --red: #ef4444;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+.auth-wrap {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.75rem;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+.auth-brand {
+  font-weight: 800;
+  font-size: 1.1rem;
+  letter-spacing: 0.04em;
+  color: var(--gold);
+  margin-bottom: 0.35rem;
+}
+.auth-sub {
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin-bottom: 1.25rem;
+}
+.auth-field { margin-bottom: 0.9rem; }
+.auth-field label {
+  display: block;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 0.3rem;
+}
+.auth-field input, .auth-field select {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 0.55rem 0.65rem;
+  font-size: 0.88rem;
+}
+.auth-field input:focus, .auth-field select:focus {
+  outline: none;
+  border-color: var(--gold);
+}
+.auth-btn {
+  width: 100%;
+  border: none;
+  border-radius: 6px;
+  padding: 0.65rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  background: var(--gold);
+  color: #1a1200;
+  margin-top: 0.35rem;
+}
+.auth-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.auth-link {
+  margin-top: 1rem;
+  text-align: center;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.auth-link a { color: var(--gold); text-decoration: none; }
+.auth-link a:hover { text-decoration: underline; }
+.auth-msg {
+  margin-top: 0.85rem;
+  font-size: 0.78rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 6px;
+  display: none;
+}
+.auth-msg.show { display: block; }
+.auth-msg.err { background: rgba(239, 68, 68, 0.12); color: var(--red); border: 1px solid rgba(239, 68, 68, 0.35); }
+.auth-msg.ok { background: rgba(34, 197, 94, 0.12); color: var(--green); border: 1px solid rgba(34, 197, 94, 0.35); }
+
+.admin-page { min-height: 100vh; padding: 1rem 1.25rem 2rem; }
+.admin-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.admin-top h1 { font-size: 1.1rem; color: var(--gold); }
+.admin-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.admin-btn {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  border-radius: 6px;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.admin-btn.primary { background: var(--gold); color: #1a1200; border-color: var(--gold); font-weight: 700; }
+.admin-panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+.admin-panel h2 {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--gold);
+  margin-bottom: 0.75rem;
+}
+.admin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.65rem;
+  margin-bottom: 0.75rem;
+}
+.admin-table-wrap { overflow-x: auto; }
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+.admin-table th, .admin-table td {
+  text-align: left;
+  padding: 0.55rem 0.45rem;
+  border-bottom: 1px solid var(--border);
+}
+.admin-table th { color: var(--muted); font-weight: 600; }
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+.badge.ok { background: rgba(34, 197, 94, 0.15); color: var(--green); }
+.badge.no { background: rgba(239, 68, 68, 0.15); color: var(--red); }
+.badge.admin { background: rgba(240, 180, 41, 0.15); color: var(--gold); }
+.row-actions { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+.row-actions button {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 0.25rem 0.45rem;
+  font-size: 0.68rem;
+  cursor: pointer;
+}

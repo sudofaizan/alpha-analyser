@@ -24,9 +24,17 @@ cd alpha-analyser
 sudo ./deploy-ec2.sh
 ```
 
-3. Open `http://YOUR_EC2_PUBLIC_IP/` — click **Load**.
+3. Set auth in `/opt/alpha-analyser/backend/.env`:
 
-4. **Configure MT5 upstream** (if not default):
+```bash
+FLASK_SECRET_KEY=your-long-random-secret
+ADMIN_EMAIL=admin@yourdomain.com
+ADMIN_PASSWORD=your-admin-password
+```
+
+4. Open `http://YOUR_EC2_PUBLIC_IP/login.html` — sign in as admin, then open **Admin** to approve users and set subscription expiry dates.
+
+5. **Configure MT5 upstream** (if not default):
 
 ```bash
 sudo nano /opt/alpha-analyser/backend/.env
@@ -37,9 +45,19 @@ sudo systemctl restart alpha-analyser-api
 
 | Key | Default | Purpose |
 |-----|---------|---------|
+| `FLASK_SECRET_KEY` | — | JWT signing secret (required in production) |
+| `ADMIN_EMAIL` | — | First admin bootstrap (only when DB empty) |
+| `ADMIN_PASSWORD` | — | First admin password |
+| `ANALYSER_DB_PATH` | `backend/analyser.db` | SQLite users/subscriptions (copy for backup) |
 | `MT5_VPS_URL` | `http://13.42.76.172:8080` | MT5 REST API |
 | `MT5_API_KEY` | `alphafx` | MT5 API key |
-| `ANALYSER_API_KEY` | `alphafx` | Browser `X-API-Key` header |
+
+## Auth & subscriptions
+
+- **Signup:** `/signup.html` — anyone can register; access is blocked until admin approves.
+- **Login:** `/login.html` — JWT stored in browser localStorage.
+- **Admin:** `/admin.html` — approve email, set subscription expiry, delete users.
+- **Backup:** copy `backend/analyser.db` to save all users and subscription dates.
 
 ## Local development
 

@@ -1,6 +1,11 @@
 // @ts-nocheck
 /** Alpha Analyser v2 — server-side analysis, client render only. */
 import {
+  accessMessage,
+  authHeaders,
+  clearSession,
+} from "./auth";
+import {
   clearOverlays,
   createOverlayState,
   renderServerBundle,
@@ -9,7 +14,6 @@ import {
 const LightweightCharts = window.LightweightCharts;
 const $ = (id) => document.getElementById(id);
 
-const API_KEY_STORAGE = "alphafx_api_key";
 const SETTINGS_KEY = "alpha_analyser_v2_settings";
 const LEGACY_SETTINGS_KEY = "alpha_analyser_settings";
 const CHART_VIEW_KEY = "alpha_analyser_chart_view";
@@ -411,23 +415,26 @@ function ensureNextMoveVisible(rows) {
   requestAnimationFrame(() => {
     try {
       const ts = chart.timeScale();
-      const cur = ts.getVisibleRange?.();
-      if (cur) {
-        ts.setVisibleRange({ from: cur.from, to: Math.max(cur.to, lastPt.time + 300) });
+      const n = rows.length;
+      const logical = ts.getVisibleLogicalRange();
+      if (logical) {
+        const width = logical.to - logical.from;
+        const to = Math.max(logical.to, n - 1 + VIEWPORT_RIGHT_PAD + 12);
+        ts.setVisibleLogicalRange(clampLogicalRange(to - width, to, n));
       }
     } catch (_) { /* ignore */ }
     viewportApplying = false;
   });
 }
 
-function applyRenderBundle(render, { redrawOverlays = true } = {}) {
+function applyRenderBundle(render, { redrawOverlays = true, panToNextMove = false } = {}) {
   if (!render) return;
   lastRender = render;
   updateSummary(render.summary);
   updateNextMovePanel(render.next_move);
   if (redrawOverlays && overlayState) {
     renderServerBundle(overlayState, render, toggleState());
-    ensureNextMoveVisible(lastCandles);
+    if (panToNextMove) ensureNextMoveVisible(lastCandles);
   }
 }
 
@@ -463,6 +470,11 @@ function updateCandles(rows, { preserveViewport = false, contextChanged = false 
   return true;
 }
 
+const TOGGLE_IDS = [
+  "togPriceAction", "togR1", "togR2", "togR3", "togRsiDiv", "togPdLevels",
+  "togNextMove", "togSmc", "togPaSmc", "togSessions", "togAutoRefresh",
+];
+
 function loadSettings() {
   try {
     let s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
@@ -475,34 +487,49 @@ function loadSettings() {
     if (s.timeframe) $("timeframe").value = s.timeframe;
     if (s.barCount) $("barCount").value = s.barCount;
     if (s.dataSource) $("dataSource").value = s.dataSource;
-    if (s.togRsiDiv != null) $("togRsiDiv").checked = !!s.togRsiDiv;
-    if (s.togPdLevels != null) $("togPdLevels").checked = !!s.togPdLevels;
-    if (s.togSmc != null) $("togSmc").checked = !!s.togSmc;
-    if (s.togPaSmc != null) $("togPaSmc").checked = !!s.togPaSmc;
-    if (s.togAutoRefresh != null) $("togAutoRefresh").checked = !!s.togAutoRefresh;
+    for (const id of TOGGLE_IDS) {
+      if (s[id] != null) $(id).checked = !!s[id];
+    }
   } catch (_) {
     $("apiServer").value = defaultAnalyserApi();
   }
-  if (!$("apiServer").value) $("apiServer").value = defaultAnalyserApi();
+  if (!$("apiServer").value && !import.meta.env.PROD) $("apiServer").value = defaultAnalyserApi();
   $("serverField").style.display = $("dataSource").value === "api" ? "flex" : "none";
 }
 
 function saveSettings() {
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+  const payload = {
     server: $("apiServer").value.trim(),
     symbol: $("symbol").value.trim(),
     timeframe: $("timeframe").value,
     barCount: $("barCount").value,
     dataSource: $("dataSource").value,
-    togRsiDiv: $("togRsiDiv").checked,
-    togPdLevels: $("togPdLevels").checked,
-    togSmc: $("togSmc").checked,
-    togPaSmc: $("togPaSmc").checked,
-    togAutoRefresh: $("togAutoRefresh").checked,
-  }));
+  };
+  for (const id of TOGGLE_IDS) payload[id] = $(id).checked;
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(payload));
 }
 
-function apiKey() { return sessionStorage.getItem(API_KEY_STORAGE) || "alphafx"; }
+let currentUser = null;
+let appAccessGranted = false;
+
+function updateUserBar(user) {
+  $("userEmail").textContent = user?.email || "—";
+  $("adminLink").style.display = user?.is_admin ? "inline" : "none";
+}
+
+function showSubscriptionBlock(user) {
+  appAccessGranted = false;
+  $("subBlockMsg").textContent = accessMessage(user?.access_reason);
+  $("subBlock").classList.add("show");
+  document.querySelector(".app")?.classList.add("blocked");
+  setStatus("Subscription inactive — contact admin", false);
+}
+
+function hideSubscriptionBlock() {
+  appAccessGranted = true;
+  $("subBlock").classList.remove("show");
+  document.querySelector(".app")?.classList.remove("blocked");
+}
 
 function setStatus(msg, ok = true) {
   $("statusLeft").innerHTML = ok ? `<span class="ok">${msg}</span>` : `<span class="err">${msg}</span>`;
@@ -518,9 +545,12 @@ async function fetchFromApi(silent = false) {
   setStatus(preserve ? (silent ? "Refreshing…" : "Updating…") : "Loading chart bundle…");
 
   const api = baseUrl() || window.location.origin;
+  if (!appAccessGranted) {
+    throw new Error("Subscription inactive — contact admin");
+  }
   const res = await fetch(
     apiUrl(`/getChartBundle?symbol=${encodeURIComponent(sym)}&timeframe=${tf}&count=${count}`),
-    { headers: { "X-API-Key": apiKey() } },
+    { headers: authHeaders() },
   );
   const raw = await res.text();
   let data;
@@ -537,8 +567,22 @@ async function fetchFromApi(silent = false) {
   if (!res.ok || !data.ok || !data.candles) throw new Error(data.error || "Chart bundle failed");
 
   const rows = candlesToRows(data.candles);
+  let lockedLogical = null;
+  if (preserve && chart) {
+    try { lockedLogical = chart.timeScale().getVisibleLogicalRange(); } catch (_) {}
+  }
   updateCandles(rows, { preserveViewport: preserve, contextChanged });
-  applyRenderBundle(data.render, { redrawOverlays: true });
+  applyRenderBundle(data.render, { redrawOverlays: true, panToNextMove: false });
+  if (preserve && lockedLogical && chart) {
+    viewportApplying = true;
+    try {
+      chart.timeScale().setVisibleLogicalRange(
+        clampLogicalRange(lockedLogical.from, lockedLogical.to, rows.length),
+      );
+    } catch (_) { /* ignore */ }
+    viewportApplying = false;
+    scheduleSaveChartView();
+  }
 
   const m = data.meta || {};
   const smcInfo = m.smc_fvg_count != null
@@ -581,6 +625,7 @@ async function fetchFromLocal() {
 }
 
 async function loadChart(silent = false) {
+  if (!appAccessGranted) return;
   if (loadInProgress) return;
   loadInProgress = true;
   if (!silent) saveSettings();
@@ -602,11 +647,14 @@ function syncAutoRefresh() {
   }
 }
 
-function onToggleChange() {
+function onToggleChange(ev) {
   saveSettings();
   if (lastRender && overlayState) {
     renderServerBundle(overlayState, lastRender, toggleState());
     updateNextMovePanel(lastRender.next_move);
+    if (ev?.target?.id === "togNextMove" && $("togNextMove").checked) {
+      ensureNextMoveVisible(lastCandles);
+    }
   }
 }
 
@@ -616,7 +664,7 @@ $("dataSource").addEventListener("change", () => {
   $("serverField").style.display = $("dataSource").value === "api" ? "flex" : "none";
   saveSettings();
 });
-["togPriceAction", "togR1", "togR2", "togR3", "togRsiDiv", "togPdLevels", "togSmc", "togPaSmc", "togNextMove"].forEach((id) => {
+TOGGLE_IDS.forEach((id) => {
   $(id).addEventListener("change", onToggleChange);
 });
 ["symbol", "timeframe", "barCount", "apiServer"].forEach((id) => {
@@ -626,7 +674,7 @@ $("dataSource").addEventListener("change", () => {
 async function probeAnalyserApi() {
   const api = baseUrl() || window.location.origin;
   try {
-    const r = await fetch(apiUrl("/health"), { headers: { "X-API-Key": apiKey() } });
+    const r = await fetch(apiUrl("/health"));
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const h = await r.json();
     if (h.service === "alpha-analyser-ec2" || h.service === "alpha-analyser") {
@@ -644,7 +692,21 @@ async function probeAnalyserApi() {
   }
 }
 
-loadSettings();
-initChart();
-syncAutoRefresh();
-probeAnalyserApi();
+$("btnLogout").addEventListener("click", () => {
+  clearSession();
+  window.location.href = "/login.html";
+});
+
+export function startDashboard(user) {
+  currentUser = user;
+  updateUserBar(currentUser);
+  loadSettings();
+  initChart();
+  if (currentUser.has_access) {
+    hideSubscriptionBlock();
+    syncAutoRefresh();
+    probeAnalyserApi();
+  } else {
+    showSubscriptionBlock(currentUser);
+  }
+}

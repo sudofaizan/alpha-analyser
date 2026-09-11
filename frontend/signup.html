@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign up — AlphaANALYSER</title>
+  <link rel="stylesheet" href="/src/auth-pages.css" />
+</head>
+<body>
+  <div class="auth-wrap">
+    <form class="auth-card" id="signupForm">
+      <div class="auth-brand">AlphaANALYSER</div>
+      <div class="auth-sub">Create an account — admin must approve your email before access</div>
+      <div class="auth-field">
+        <label for="email">Email</label>
+        <input id="email" type="email" autocomplete="email" required />
+      </div>
+      <div class="auth-field">
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="new-password" minlength="6" required />
+      </div>
+      <div class="auth-field">
+        <label for="password2">Confirm password</label>
+        <input id="password2" type="password" autocomplete="new-password" minlength="6" required />
+      </div>
+      <button class="auth-btn" type="submit" id="btnSubmit">Create account</button>
+      <div class="auth-msg" id="msg"></div>
+      <div class="auth-link">Already registered? <a href="/login.html">Sign in</a></div>
+    </form>
+  </div>
+  <script type="module" src="/src/signup.ts"></script>
+</body>
+</html>

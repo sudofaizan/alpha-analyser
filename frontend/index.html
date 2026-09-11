@@ -123,11 +123,44 @@
     .statusbar .err { color: var(--red); }
     a.back { color: var(--gold); text-decoration: none; font-size: .72rem; align-self: center; }
     a.back:hover { text-decoration: underline; }
+    .user-bar {
+      margin-left: auto; display: flex; align-items: center; gap: .65rem;
+      font-size: .72rem; color: var(--muted);
+    }
+    .user-bar a, .user-bar button {
+      color: var(--gold); text-decoration: none; background: none; border: none;
+      cursor: pointer; font: inherit; padding: 0;
+    }
+    .user-bar a:hover, .user-bar button:hover { text-decoration: underline; }
+    .sub-block {
+      position: absolute; inset: 0; z-index: 20;
+      display: none; align-items: center; justify-content: center;
+      background: rgba(11, 15, 20, 0.88); backdrop-filter: blur(4px);
+      padding: 1.5rem; text-align: center;
+    }
+    .sub-block.show { display: flex; }
+    .sub-block-card {
+      max-width: 420px; background: var(--panel); border: 1px solid var(--border);
+      border-radius: 10px; padding: 1.5rem;
+    }
+    .sub-block-card h2 { color: var(--red); font-size: 1rem; margin-bottom: .65rem; }
+    .sub-block-card p { color: var(--muted); line-height: 1.55; font-size: .82rem; }
+    .app.blocked .topbar, .app.blocked .pa-bar, .app.blocked .statusbar { opacity: .55; pointer-events: none; }
+    .app.blocked .workspace { pointer-events: none; opacity: .35; }
     @media (max-width: 900px) {
       .workspace { grid-template-columns: 1fr; }
       .sidepanel { border-left: none; border-top: 1px solid var(--border); max-height: 160px; }
     }
   </style>
+  <script>
+    (function () {
+      try {
+        if (!localStorage.getItem("analyser_auth_token")) {
+          location.replace("/login.html");
+        }
+      } catch (_) {}
+    })();
+  </script>
 <body>
   <div class="app">
     <header class="topbar">
@@ -158,6 +191,11 @@
       <label class="pa-toggle" style="margin-left:.35rem" title="Reload chart every 5 seconds">
         <input type="checkbox" id="togAutoRefresh" /> Auto 5s
       </label>
+      <div class="user-bar" id="userBar">
+        <span id="userEmail">—</span>
+        <a href="/admin.html" id="adminLink" style="display:none">Admin</a>
+        <button type="button" id="btnLogout">Logout</button>
+      </div>
     </header>
 
     <div class="pa-bar">
@@ -190,6 +228,12 @@
       <div id="chartHost">
         <div id="tvChart"></div>
         <div id="sessionLabelLayer" class="session-label-layer" aria-hidden="true"></div>
+        <div class="sub-block" id="subBlock">
+          <div class="sub-block-card">
+            <h2>Subscription inactive</h2>
+            <p id="subBlockMsg">Subscription expired. Contact admin.</p>
+          </div>
+        </div>
       </div>
       <aside class="sidepanel">
         <h3>Price action read</h3>

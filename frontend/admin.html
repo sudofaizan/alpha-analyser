@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin — AlphaANALYSER</title>
+  <link rel="stylesheet" href="/src/auth-pages.css" />
+</head>
+<body>
+  <div class="admin-page">
+    <div class="admin-top">
+      <h1>AlphaANALYSER Admin</h1>
+      <div class="admin-actions">
+        <button class="admin-btn" type="button" id="btnDashboard">Dashboard</button>
+        <button class="admin-btn" type="button" id="btnLogout">Logout</button>
+      </div>
+    </div>
+
+    <div class="admin-panel">
+      <h2>Add / approve user</h2>
+      <div class="admin-grid">
+        <div class="auth-field">
+          <label for="newEmail">Email</label>
+          <input id="newEmail" type="email" placeholder="user@example.com" />
+        </div>
+        <div class="auth-field">
+          <label for="newExpiry">Subscription expires</label>
+          <input id="newExpiry" type="date" />
+        </div>
+        <div class="auth-field">
+          <label for="newPassword">Temp password (optional)</label>
+          <input id="newPassword" type="text" placeholder="changeme123" />
+        </div>
+        <div class="auth-field" style="display:flex;align-items:flex-end">
+          <label style="display:flex;align-items:center;gap:.45rem;cursor:pointer">
+            <input id="newAllowed" type="checkbox" checked /> Email allowed
+          </label>
+        </div>
+      </div>
+      <button class="admin-btn primary" type="button" id="btnAddUser">Save user</button>
+      <div class="auth-msg" id="adminMsg"></div>
+    </div>
+
+    <div class="admin-panel">
+      <h2>Users</h2>
+      <div class="admin-table-wrap">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>Email</th>
+              <th>Role</th>
+              <th>Allowed</th>
+              <th>Expires</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="usersBody">
+            <tr><td colspan="6">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="/src/admin.ts"></script>
+</body>
+</html>
