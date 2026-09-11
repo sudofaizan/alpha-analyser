@@ -87,3 +87,11 @@ cd alpha-analyser
 git pull
 sudo ./deploy-ec2.sh
 ```
+
+`deploy-ec2.sh` **preserves** `/opt/alpha-analyser/backend/analyser.db` and `.env` — users and subscriptions are not wiped on redeploy.
+
+**Backup before major changes:**
+
+```bash
+sudo cp /opt/alpha-analyser/backend/analyser.db ~/analyser-backup-$(date +%F).db
+```

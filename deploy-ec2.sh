@@ -41,11 +41,18 @@ fi
 
 echo "==> Syncing app to ${INSTALL_DIR}..."
 mkdir -p "$INSTALL_DIR"
+# Backup auth DB before sync (users/subscriptions survive redeploys)
+if [[ -f "$INSTALL_DIR/backend/analyser.db" ]]; then
+  cp "$INSTALL_DIR/backend/analyser.db" "$INSTALL_DIR/backend/analyser.db.pre-deploy.bak"
+  echo "    Backed up analyser.db"
+fi
 rsync -a --delete \
   --exclude '.git' \
   --exclude 'frontend/node_modules' \
   --exclude 'frontend/dist' \
   --exclude 'backend/.venv' \
+  --exclude 'backend/analyser.db' \
+  --exclude 'backend/.env' \
   "$REPO_DIR/" "$INSTALL_DIR/"
 
 echo "==> Python API (venv + gunicorn)..."
@@ -58,7 +65,10 @@ pip install -r requirements.txt -q
 
 if [[ ! -f .env ]]; then
   cp .env.example .env
-  echo "    Created backend/.env — set MT5_VPS_URL if needed"
+  echo "    Created backend/.env — set ADMIN_EMAIL, ADMIN_PASSWORD, FLASK_SECRET_KEY"
+fi
+if [[ ! -f analyser.db ]]; then
+  echo "    No analyser.db yet — admin bootstrapped from .env on first API start"
 fi
 
 echo "==> Building frontend..."
