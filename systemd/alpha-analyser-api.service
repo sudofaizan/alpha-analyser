@@ -1,0 +1,15 @@
+[Unit]
+Description=Alpha Analyser API (Flask/Gunicorn)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/alpha-analyser/backend
+EnvironmentFile=/opt/alpha-analyser/backend/.env
+ExecStart=/opt/alpha-analyser/backend/.venv/bin/gunicorn -w 2 -b 127.0.0.1:8090 --timeout 120 server:app
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

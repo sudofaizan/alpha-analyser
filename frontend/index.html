@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AlphaANALYSER v2</title>
+  <style>
+    :root {
+      --bg: #0b0f14;
+      --panel: #11161d;
+      --border: #1e2836;
+      --text: #d8e1ed;
+      --muted: #7d8da3;
+      --gold: #f0b429;
+      --green: #22c55e;
+      --red: #ef4444;
+      --blue: #38bdf8;
+      --purple: #a78bfa;
+      --r1: #38bdf8;
+      --r2: #f0b429;
+      --r3: #a78bfa;
+      --r4: #22c55e;
+      --r4dn: #ef4444;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: "Segoe UI", system-ui, sans-serif; overflow: hidden; }
+    .app { display: grid; grid-template-rows: auto auto 1fr auto; height: 100vh; }
+    .topbar {
+      display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem;
+      padding: .5rem .75rem; background: var(--panel); border-bottom: 1px solid var(--border);
+    }
+    .brand {
+      font-weight: 800; font-size: 1rem; letter-spacing: .04em; color: var(--gold);
+      margin-right: .5rem; white-space: nowrap;
+    }
+    .brand span { color: var(--muted); font-weight: 500; font-size: .72rem; margin-left: .35rem; }
+    .topbar label { font-size: .65rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; display: block; margin-bottom: .15rem; }
+    .field { display: flex; flex-direction: column; }
+    .field input, .field select {
+      background: var(--bg); border: 1px solid var(--border); color: var(--text);
+      border-radius: 4px; padding: .35rem .5rem; font-size: .8rem; min-width: 0;
+    }
+    .field input:focus, .field select:focus { outline: none; border-color: var(--gold); }
+    .btn {
+      border: none; border-radius: 4px; padding: .45rem .85rem; font-size: .78rem;
+      font-weight: 700; cursor: pointer; align-self: flex-end;
+    }
+    .btn-gold { background: var(--gold); color: #1a1200; }
+    .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    .btn-ghost:hover { border-color: var(--gold); color: var(--gold); }
+    .pa-bar {
+      display: flex; flex-wrap: wrap; align-items: center; gap: .75rem 1.25rem;
+      padding: .4rem .75rem; background: #0d1219; border-bottom: 1px solid var(--border);
+      font-size: .75rem;
+    }
+    .pa-toggle {
+      display: inline-flex; align-items: center; gap: .4rem; cursor: pointer;
+      user-select: none; font-weight: 600; color: var(--gold);
+    }
+    .pa-toggle input { accent-color: var(--gold); width: 15px; height: 15px; }
+    .pa-toggle.sub { color: var(--muted); font-weight: 500; font-size: .72rem; }
+    .pa-toggle.sub input { width: 13px; height: 13px; }
+    .pa-divider { width: 1px; height: 18px; background: var(--border); }
+    .legend { display: flex; flex-wrap: wrap; gap: .65rem 1rem; color: var(--muted); font-size: .7rem; }
+    .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: .25rem; vertical-align: middle; }
+    .legend .r1 i { background: var(--r1); }
+    .legend .r2 i { background: var(--r2); }
+    .legend .r3 i { background: var(--r3); }
+    .legend .r4 i { background: var(--r4); }
+    .next-move-box {
+      margin-top: .75rem; padding: .5rem; border-radius: 6px;
+      border: 1px solid var(--border); background: rgba(15,20,28,.8);
+      line-height: 1.45;
+    }
+    .next-move-box .scenario { font-weight: 700; color: var(--gold); margin-bottom: .35rem; font-size: .78rem; }
+    .next-move-box .wave { color: var(--purple); font-size: .68rem; margin-bottom: .4rem; }
+    .next-move-box .conf { font-size: .68rem; color: var(--muted); }
+    .next-move-box .nm-path { font-size: .72rem; font-weight: 700; margin: .35rem 0; color: var(--blue); }
+    .next-move-box .nm-logic {
+      display: none; margin-top: .45rem; padding-top: .45rem;
+      border-top: 1px dashed var(--border);
+      font-size: .66rem; color: var(--muted); line-height: 1.5;
+    }
+    .next-move-box .nm-logic.open { display: block; }
+    .next-move-box .nm-hint { font-size: .62rem; color: var(--muted); margin-top: .35rem; opacity: .85; }
+    .next-move-box.logic-open { border-color: var(--gold); }
+    .pa-toggle .click-hint { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
+    .pa-toggle .click-hint:hover { color: var(--gold); }
+    .workspace { display: grid; grid-template-columns: 1fr 248px; min-height: 0; }
+    #chartHost { position: relative; min-height: 0; height: 100%; }
+    #tvChart { width: 100%; height: 100%; min-height: 280px; }
+    .smc-glow-layer { display: none; }
+    .session-label-layer {
+      position: absolute; left: 0; top: 0; right: 0; bottom: 0;
+      pointer-events: none; overflow: hidden; z-index: 4;
+    }
+    .session-label {
+      position: absolute;
+      font-size: 9px; line-height: 1.3; font-weight: 600;
+      padding: 3px 5px; border-radius: 4px; white-space: pre; border: 1px solid;
+      backdrop-filter: blur(2px);
+    }
+    .sidepanel {
+      border-left: 1px solid var(--border); background: var(--panel);
+      padding: .65rem; overflow-y: auto; font-size: .75rem;
+    }
+    .sidepanel h3 {
+      font-size: .68rem; text-transform: uppercase; letter-spacing: .08em;
+      color: var(--gold); margin-bottom: .5rem;
+    }
+    .pa-summary .row { display: flex; justify-content: space-between; padding: .3rem 0; border-bottom: 1px solid var(--border); }
+    .pa-summary .row b { color: var(--muted); font-weight: 500; }
+    .pa-summary .val { font-weight: 700; }
+    .pa-summary .up { color: var(--green); }
+    .pa-summary .dn { color: var(--red); }
+    .pa-summary .neu { color: var(--muted); }
+    .statusbar {
+      padding: .35rem .75rem; font-size: .7rem; color: var(--muted);
+      border-top: 1px solid var(--border); background: var(--panel);
+      display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
+    }
+    .statusbar .ok { color: var(--green); }
+    .statusbar .err { color: var(--red); }
+    a.back { color: var(--gold); text-decoration: none; font-size: .72rem; align-self: center; }
+    a.back:hover { text-decoration: underline; }
+    @media (max-width: 900px) {
+      .workspace { grid-template-columns: 1fr; }
+      .sidepanel { border-left: none; border-top: 1px solid var(--border); max-height: 160px; }
+    }
+  </style>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">AlphaANALYSER <span>v2</span></div>
+      <div class="field"><label>Source</label>
+        <select id="dataSource">
+          <option value="api">Live API</option>
+          <option value="local">Local JSON</option>
+        </select>
+      </div>
+      <div class="field"><label>Symbol</label>
+        <input id="symbol" type="text" value="XAUUSD" placeholder="GOLD.i#" style="width:110px" autocomplete="off" spellcheck="false" />
+      </div>
+      <div class="field"><label>Timeframe</label>
+        <select id="timeframe">
+          <option value="M1">M1</option>
+          <option value="M5" selected>M5</option>
+          <option value="M15">M15</option>
+          <option value="M30">M30</option>
+          <option value="H1">H1</option>
+          <option value="H4">H4</option>
+          <option value="D1">D1</option>
+        </select>
+      </div>
+      <div class="field"><label>Bars</label><input id="barCount" type="number" value="500" min="50" max="5000" style="width:72px" /></div>
+      <div class="field" id="serverField"><label>API host</label><input id="apiServer" type="text" placeholder="same host (prod) or localhost:8090" style="width:180px" title="Leave empty on EC2 — uses same server" /></div>
+      <button class="btn btn-gold" id="btnLoad" type="button">Load</button>
+      <label class="pa-toggle" style="margin-left:.35rem" title="Reload chart every 5 seconds">
+        <input type="checkbox" id="togAutoRefresh" /> Auto 5s
+      </label>
+    </header>
+
+    <div class="pa-bar">
+      <label class="pa-toggle"><input type="checkbox" id="togPriceAction" checked /> Price action</label>
+      <span class="pa-divider"></span>
+      <label class="pa-toggle sub"><input type="checkbox" id="togR1" checked /> R1 Structure</label>
+      <label class="pa-toggle sub"><input type="checkbox" id="togR2" checked /> R2 Levels</label>
+      <label class="pa-toggle sub"><input type="checkbox" id="togR3" /> R3 Confirm</label>
+      <label class="pa-toggle sub"><input type="checkbox" id="togRsiDiv" checked /> RSI Divergence</label>
+      <label class="pa-toggle sub"><input type="checkbox" id="togPdLevels" checked /> PDH / PDL</label>
+      <span class="pa-divider"></span>
+      <label class="pa-toggle"><input type="checkbox" id="togNextMove" /> Next move</label>
+      <span class="pa-divider"></span>
+      <label class="pa-toggle sub"><input type="checkbox" id="togSmc" /> SMC (FVG · BOS · CHoCH)</label>
+      <label class="pa-toggle sub"><input type="checkbox" id="togPaSmc" /> Price action + SMC</label>
+      <label class="pa-toggle sub"><input type="checkbox" id="togSessions" /> Trading sessions</label>
+      <div class="legend">
+        <span class="r1"><i></i>Wave · BOS · ChoCH</span>
+        <span class="r2"><i></i>Supply / demand · OB</span>
+        <span class="r3"><i></i>Last 2 pin/engulf at levels</span>
+        <span class="r4"><i style="background:#22c55e"></i>RSI div · green bull / red bear</span>
+        <span class="r2"><i style="background:#facc15"></i>PDH / PDL · yellow glow</span>
+        <span class="r4"><i></i>Projected path · T1/T2 · fib</span>
+        <span class="r1" style="margin-left:.5rem"><i style="background:#fbbf24"></i>⚡ inducement</span>
+        <span class="r2" style="margin-left:.5rem"><i style="background:#089981"></i>BB SMC · OB · FVG</span>
+      </div>
+    </div>
+
+    <div class="workspace">
+      <div id="chartHost">
+        <div id="tvChart"></div>
+        <div id="sessionLabelLayer" class="session-label-layer" aria-hidden="true"></div>
+      </div>
+      <aside class="sidepanel">
+        <h3>Price action read</h3>
+        <div class="pa-summary" id="paSummary">
+          <div class="row"><b>Structure</b><span class="val neu" id="sumStructure">—</span></div>
+          <div class="row"><b>Last label</b><span class="val" id="sumLabel">—</span></div>
+          <div class="row"><b>Swing highs</b><span class="val" id="sumSH">—</span></div>
+          <div class="row"><b>Swing lows</b><span class="val" id="sumSL">—</span></div>
+          <div class="row"><b>Order blocks</b><span class="val" id="sumOB">—</span></div>
+          <div class="row"><b>Confirmations</b><span class="val" id="sumConf">—</span></div>
+          <div class="row"><b>RSI divergences</b><span class="val" id="sumRsiDiv">—</span></div>
+          <div class="row"><b>PDH</b><span class="val" id="sumPdh">—</span></div>
+          <div class="row"><b>PDL</b><span class="val" id="sumPdl">—</span></div>
+        </div>
+        <div class="next-move-box" id="nextMoveBox" style="display:none">
+          <div class="scenario" id="nmScenario">—</div>
+          <div class="wave" id="nmWave">—</div>
+          <div class="nm-path" id="nmPath">—</div>
+          <div class="row"><b>Net direction</b><span class="val" id="nmDir">—</span></div>
+          <div class="row"><b>Target 1</b><span class="val" id="nmT1">—</span></div>
+          <div class="row"><b>Target 2</b><span class="val" id="nmT2">—</span></div>
+          <div class="row"><b>Invalidation</b><span class="val dn" id="nmInv">—</span></div>
+          <div class="row"><b>HTF bias</b><span class="val" id="nmHtf">—</span></div>
+          <div class="conf" id="nmConf">—</div>
+        </div>
+        <h3 style="margin-top:.75rem">Session</h3>
+        <div id="sumMeta" style="color:var(--muted);line-height:1.45">Load chart to analyse.</div>
+      </aside>
+    </div>
+
+    <footer class="statusbar">
+      <span id="statusLeft">Ready — click Load</span>
+      <span id="statusRight">AlphaANALYSER v2.0</span>
+    </footer>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

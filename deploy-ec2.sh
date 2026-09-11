@@ -1,0 +1,100 @@
+#!/bin/bash
+# Deploy Alpha Analyser v2 on Amazon Linux EC2 — nginx :80 + API :8090 (internal)
+#
+# On EC2:
+#   sudo yum update -y
+#   sudo yum install -y git
+#   git clone https://github.com/sudofaizan/alpha-analyser.git
+#   cd alpha-analyser
+#   sudo ./deploy-ec2.sh
+#
+set -euo pipefail
+
+if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+  echo "Run as root: sudo ./deploy-ec2.sh"
+  exit 1
+fi
+
+REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
+INSTALL_DIR=/opt/alpha-analyser
+WEB_ROOT=/var/www/alpha-analyser
+
+echo "==> Installing system packages (Amazon Linux)..."
+if command -v dnf &>/dev/null; then
+  dnf install -y nginx python3 python3-pip nodejs npm rsync curl
+elif command -v yum &>/dev/null; then
+  yum install -y nginx python3 python3-pip nodejs npm rsync curl
+else
+  echo "Unsupported OS — need dnf or yum (Amazon Linux / RHEL)"
+  exit 1
+fi
+
+echo "==> Syncing app to ${INSTALL_DIR}..."
+mkdir -p "$INSTALL_DIR"
+rsync -a --delete \
+  --exclude '.git' \
+  --exclude 'frontend/node_modules' \
+  --exclude 'frontend/dist' \
+  --exclude 'backend/.venv' \
+  "$REPO_DIR/" "$INSTALL_DIR/"
+
+echo "==> Python API (venv + gunicorn)..."
+cd "$INSTALL_DIR/backend"
+python3 -m venv .venv
+# shellcheck disable=SC1091
+source .venv/bin/activate
+pip install --upgrade pip -q
+pip install -r requirements.txt -q
+
+if [[ ! -f .env ]]; then
+  cp .env.example .env
+  echo "    Created backend/.env — set MT5_VPS_URL if needed"
+fi
+
+echo "==> Building frontend..."
+cd "$INSTALL_DIR/frontend"
+npm ci --silent
+VITE_ANALYSER_API="" npm run build
+
+echo "==> Publishing static site to ${WEB_ROOT}..."
+mkdir -p "$WEB_ROOT"
+rsync -a --delete dist/ "$WEB_ROOT/"
+chown -R nginx:nginx "$WEB_ROOT" 2>/dev/null || chown -R www-data:www-data "$WEB_ROOT" 2>/dev/null || true
+
+echo "==> nginx on port 80..."
+cp "$INSTALL_DIR/nginx/alpha-analyser.conf" /etc/nginx/conf.d/alpha-analyser.conf
+rm -f /etc/nginx/conf.d/default.conf 2>/dev/null || true
+nginx -t
+systemctl enable nginx
+systemctl restart nginx
+
+echo "==> API systemd service (127.0.0.1:8090)..."
+cp "$INSTALL_DIR/systemd/alpha-analyser-api.service" /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable alpha-analyser-api
+systemctl restart alpha-analyser-api
+
+# SELinux: allow nginx to proxy to backend
+if command -v setsebool &>/dev/null; then
+  setsebool -P httpd_can_network_connect 1 2>/dev/null || true
+fi
+
+# Optional: open HTTP in firewalld
+if systemctl is-active --quiet firewalld 2>/dev/null; then
+  firewall-cmd --permanent --add-service=http 2>/dev/null || true
+  firewall-cmd --reload 2>/dev/null || true
+fi
+
+PUBLIC_IP="$(curl -sf --max-time 2 http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || true)"
+
+echo ""
+echo "=============================================="
+echo " Alpha Analyser deployed"
+echo "=============================================="
+echo "  Web UI:  http://${PUBLIC_IP:-YOUR_EC2_PUBLIC_IP}/"
+echo "  Health:  http://${PUBLIC_IP:-YOUR_EC2_PUBLIC_IP}/health"
+echo "  API key: alphafx (header X-API-Key)"
+echo ""
+echo "  Edit MT5 upstream: ${INSTALL_DIR}/backend/.env"
+echo "  Logs: journalctl -u alpha-analyser-api -f"
+echo "=============================================="
