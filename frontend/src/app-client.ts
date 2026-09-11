@@ -18,7 +18,7 @@ const VIEWPORT_RIGHT_PAD = 5;
 const AUTO_REFRESH_MS = 5000;
 function defaultAnalyserApi() {
   if (import.meta.env.VITE_ANALYSER_API) return import.meta.env.VITE_ANALYSER_API;
-  if (import.meta.env.PROD && typeof window !== "undefined") return window.location.host;
+  if (import.meta.env.PROD && typeof window !== "undefined") return "";
   return "localhost:8090";
 }
 
@@ -27,10 +27,39 @@ function isMt5VpsUrl(url) {
   return u.includes(":8080") || u.includes("13.42.") || u.includes("getcandles");
 }
 
+function isInsecureApiOnHttpsPage(url) {
+  if (typeof window === "undefined" || window.location.protocol !== "https:") return false;
+  const s = String(url || "").trim().toLowerCase();
+  if (!s) return false;
+  if (s.startsWith("http://")) return true;
+  // bare IP or host without scheme → baseUrl() would use http://
+  if (/^[\d.]+(?::\d+)?$/.test(s)) return true;
+  if (/^[\w.-]+:\d+$/.test(s) && !s.startsWith("https:")) return true;
+  return false;
+}
+
 function normalizeAnalyserApi(url) {
   const s = String(url || "").trim().replace(/\/$/, "");
-  if (!s || isMt5VpsUrl(s)) return defaultAnalyserApi();
+  if (!s || isMt5VpsUrl(s) || isInsecureApiOnHttpsPage(s)) return defaultAnalyserApi();
   return s;
+}
+
+/** Empty string = same-origin (required when page is HTTPS). */
+function baseUrl() {
+  const normalized = normalizeAnalyserApi($("apiServer").value);
+  if (!normalized) return "";
+  let s = normalized;
+  if (!/^https?:\/\//i.test(s)) {
+    const proto = window.location.protocol === "https:" ? "https:" : "http:";
+    s = `${proto}//${s}`;
+  }
+  if (window.location.protocol === "https:" && s.startsWith("http://")) return "";
+  return s.replace(/\/$/, "");
+}
+
+function apiUrl(path) {
+  const base = baseUrl();
+  return base ? `${base}${path}` : path;
 }
 
 let chart = null;
@@ -441,7 +470,7 @@ function loadSettings() {
       const legacy = JSON.parse(localStorage.getItem(LEGACY_SETTINGS_KEY) || "{}");
       s = { ...legacy, ...s };
     }
-    $("apiServer").value = normalizeAnalyserApi(s.server);
+    $("apiServer").value = normalizeAnalyserApi(s.server || "");
     if (s.symbol) $("symbol").value = s.symbol;
     if (s.timeframe) $("timeframe").value = s.timeframe;
     if (s.barCount) $("barCount").value = s.barCount;
@@ -474,11 +503,6 @@ function saveSettings() {
 }
 
 function apiKey() { return sessionStorage.getItem(API_KEY_STORAGE) || "alphafx"; }
-function baseUrl() {
-  let s = $("apiServer").value.trim().replace(/\/$/, "");
-  if (!/^https?:\/\//i.test(s)) s = `http://${s}`;
-  return s;
-}
 
 function setStatus(msg, ok = true) {
   $("statusLeft").innerHTML = ok ? `<span class="ok">${msg}</span>` : `<span class="err">${msg}</span>`;
@@ -493,9 +517,9 @@ async function fetchFromApi(silent = false) {
   const preserve = lastCandles.length > 0 && !contextChanged;
   setStatus(preserve ? (silent ? "Refreshing…" : "Updating…") : "Loading chart bundle…");
 
-  const api = baseUrl();
+  const api = baseUrl() || window.location.origin;
   const res = await fetch(
-    `${api}/getChartBundle?symbol=${encodeURIComponent(sym)}&timeframe=${tf}&count=${count}`,
+    apiUrl(`/getChartBundle?symbol=${encodeURIComponent(sym)}&timeframe=${tf}&count=${count}`),
     { headers: { "X-API-Key": apiKey() } },
   );
   const raw = await res.text();
@@ -600,19 +624,21 @@ $("dataSource").addEventListener("change", () => {
 });
 
 async function probeAnalyserApi() {
-  const api = baseUrl();
+  const api = baseUrl() || window.location.origin;
   try {
-    const r = await fetch(`${api}/health`, { headers: { "X-API-Key": apiKey() } });
+    const r = await fetch(apiUrl("/health"), { headers: { "X-API-Key": apiKey() } });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const h = await r.json();
-    if (h.service === "alpha-analyser-ec2") {
+    if (h.service === "alpha-analyser-ec2" || h.service === "alpha-analyser") {
       setStatus(`Analyser API ready · upstream ${h.mt5_vps || "MT5 VPS"}`);
       return;
     }
-    setStatus(`Connected to ${api} — expected alpha-analyser-ec2`, false);
+    setStatus(`Connected to ${api} — unexpected service ${h.service || "?"}`, false);
   } catch (_) {
     setStatus(
-      `Start analyser API: cd mt5_vps_api/alpha_analyser_ec2 && ./run.sh  (then use localhost:8090)`,
+      window.location.protocol === "https:"
+        ? "API unreachable — clear API host field (use same server) and click Load"
+        : "Start analyser API: cd backend && python3 server.py  (or localhost:8090)",
       false,
     );
   }
