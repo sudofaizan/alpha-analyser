@@ -174,6 +174,42 @@ function isRightPinned(barCount) {
   }
 }
 
+/** Snapshot visible range before setData — time range preferred (stable when user panned). */
+function captureViewport() {
+  if (!chart) return null;
+  try {
+    const ts = chart.timeScale();
+    const timeRange = ts.getVisibleRange?.();
+    if (timeRange && Number.isFinite(timeRange.from) && Number.isFinite(timeRange.to)) {
+      return { mode: "time", from: timeRange.from, to: timeRange.to };
+    }
+    const logical = ts.getVisibleLogicalRange();
+    if (logical && Number.isFinite(logical.from) && Number.isFinite(logical.to)) {
+      return { mode: "logical", from: logical.from, to: logical.to };
+    }
+  } catch (_) { /* ignore */ }
+  return null;
+}
+
+function restoreViewportDeferred(snapshot, rowCount) {
+  if (!chart || !snapshot || !rowCount) return;
+  viewportApplying = true;
+  const apply = () => {
+    try {
+      const ts = chart.timeScale();
+      if (snapshot.mode === "time") {
+        ts.setVisibleRange({ from: snapshot.from, to: snapshot.to });
+      } else {
+        ts.setVisibleLogicalRange(clampLogicalRange(snapshot.from, snapshot.to, rowCount));
+      }
+      scheduleSaveChartView();
+    } catch (_) { /* ignore */ }
+    viewportApplying = false;
+  };
+  requestAnimationFrame(() => requestAnimationFrame(apply));
+  setTimeout(apply, 80);
+}
+
 function restoreChartViewport(rows, { forceDefault = false } = {}) {
   if (!chart || !rows.length) return;
   const n = rows.length;
@@ -257,8 +293,10 @@ function candlesCompatible(prev, next) {
 }
 
 function patchCandles(prev, next) {
-  if (!prev.length) return false;
-  if (prev.length === next.length && prev[prev.length - 1].time === next[next.length - 1].time) {
+  if (!prev.length || !next.length) return false;
+  // Same window — only the forming bar changed (no setData, viewport untouched)
+  if (prev.length === next.length && prev[0].time === next[0].time
+      && prev[prev.length - 1].time === next[next.length - 1].time) {
     candleSeries.update(next[next.length - 1]);
     return true;
   }
@@ -450,18 +488,9 @@ function updateCandles(rows, { preserveViewport = false, contextChanged = false 
     return true;
   }
 
-  let lockedRange = null;
-  if (preserve && chart) {
-    try { lockedRange = chart.timeScale().getVisibleLogicalRange(); } catch (_) {}
-  }
-
   candleSeries.setData(rows);
 
-  if (preserve && lockedRange) {
-    viewportApplying = true;
-    try { chart.timeScale().setVisibleLogicalRange(lockedRange); } catch (_) {}
-    viewportApplying = false;
-  } else if (!preserve) {
+  if (!preserve) {
     applyChartViewport(rows, { forceDefault: contextChanged || !loadSavedChartView() });
   }
 
@@ -567,21 +596,11 @@ async function fetchFromApi(silent = false) {
   if (!res.ok || !data.ok || !data.candles) throw new Error(data.error || "Chart bundle failed");
 
   const rows = candlesToRows(data.candles);
-  let lockedLogical = null;
-  if (preserve && chart) {
-    try { lockedLogical = chart.timeScale().getVisibleLogicalRange(); } catch (_) {}
-  }
+  const viewportSnapshot = preserve ? captureViewport() : null;
   updateCandles(rows, { preserveViewport: preserve, contextChanged });
   applyRenderBundle(data.render, { redrawOverlays: true, panToNextMove: false });
-  if (preserve && lockedLogical && chart) {
-    viewportApplying = true;
-    try {
-      chart.timeScale().setVisibleLogicalRange(
-        clampLogicalRange(lockedLogical.from, lockedLogical.to, rows.length),
-      );
-    } catch (_) { /* ignore */ }
-    viewportApplying = false;
-    scheduleSaveChartView();
+  if (viewportSnapshot) {
+    restoreViewportDeferred(viewportSnapshot, rows.length);
   }
 
   const m = data.meta || {};
