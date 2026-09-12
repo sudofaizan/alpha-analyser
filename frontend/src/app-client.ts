@@ -15,6 +15,7 @@ import {
   createOverlayState,
   renderServerBundle,
 } from "./renderer";
+import { buildTradeSignal, signalSummaryText } from "./trade-signal";
 
 const LightweightCharts = window.LightweightCharts;
 const $ = (id) => document.getElementById(id);
@@ -83,6 +84,7 @@ let loadInProgress = false;
 let viewportApplying = false;
 let chartViewSaveTimer = null;
 let sessionRepaintHooked = false;
+let lastTradeSignal = null;
 
 function chartContextKey() {
   return [
@@ -423,6 +425,43 @@ function updateSummary(summary) {
   $("sumPdl").textContent = summary.pdl != null ? fmtPrice(summary.pdl) : "—";
 }
 
+function updateTradeSignalPanel(nm, symbol) {
+  const panel = $("signalPanel");
+  if (!$("togTradeSignals")?.checked) {
+    panel.classList.add("hidden");
+    lastTradeSignal = null;
+    return;
+  }
+  const lastPrice = lastCandles.length ? lastCandles[lastCandles.length - 1].close : null;
+  const sig = buildTradeSignal(nm, lastPrice, symbol || $("symbol")?.value?.trim());
+  lastTradeSignal = sig;
+  if (!sig) {
+    panel.classList.remove("hidden");
+    $("sigAction").textContent = "—";
+    $("sigAction").className = "signal-action";
+    $("sigScenario").textContent = nm ? "Insufficient data for order levels" : "Load chart to generate signal";
+    ["sigSymbol", "sigOrderType", "sigEntry", "sigSl", "sigTp1", "sigTp2", "sigRr", "sigConf"].forEach((id) => {
+      $(id).textContent = "—";
+    });
+    $("sigEntryNote").textContent = "";
+    return;
+  }
+  panel.classList.remove("hidden");
+  const actionEl = $("sigAction");
+  actionEl.textContent = sig.action;
+  actionEl.className = `signal-action ${sig.action === "BUY" ? "buy" : "sell"}`;
+  $("sigScenario").textContent = sig.scenario;
+  $("sigSymbol").textContent = sig.symbol;
+  $("sigOrderType").textContent = sig.orderType;
+  $("sigEntry").textContent = sig.entryFmt;
+  $("sigSl").textContent = sig.slFmt;
+  $("sigTp1").textContent = sig.tp1Fmt;
+  $("sigTp2").textContent = sig.tp2Fmt;
+  $("sigRr").textContent = sig.rr !== "—" ? `1 : ${sig.rr}` : "—";
+  $("sigConf").textContent = sig.confidence != null ? `~${sig.confidence}%` : "—";
+  $("sigEntryNote").textContent = sig.entryNote;
+}
+
 function updateNextMovePanel(nm) {
   const box = $("nextMoveBox");
   if (!nm || !$("togNextMove").checked) {
@@ -470,11 +509,12 @@ function ensureNextMoveVisible(rows) {
   });
 }
 
-function applyRenderBundle(render, { redrawOverlays = true, panToNextMove = false } = {}) {
+function applyRenderBundle(render, { redrawOverlays = true, panToNextMove = false, symbol = "" } = {}) {
   if (!render) return;
   lastRender = render;
   updateSummary(render.summary);
   updateNextMovePanel(render.next_move);
+  updateTradeSignalPanel(render.next_move, symbol);
   if (redrawOverlays && overlayState) {
     renderServerBundle(overlayState, render, toggleState());
     if (panToNextMove) ensureNextMoveVisible(lastCandles);
@@ -507,6 +547,7 @@ function updateCandles(rows, { preserveViewport = false, contextChanged = false 
 const TOGGLE_IDS = [
   "togPriceAction", "togR1", "togR2", "togR3", "togRsiDiv", "togPdLevels",
   "togNextMove", "togSmc", "togPaSmc", "togSessions", "togAutoRefresh",
+  "togTradeSignals",
 ];
 
 const TOGGLE_DEFAULTS = {
@@ -521,6 +562,7 @@ const TOGGLE_DEFAULTS = {
   togPaSmc: false,
   togSessions: false,
   togAutoRefresh: false,
+  togTradeSignals: false,
 };
 
 function settingsUserKey() {
@@ -691,7 +733,7 @@ async function fetchFromApi(silent = false) {
   const rows = candlesToRows(data.candles);
   const viewportSnapshot = preserve ? captureViewport() : null;
   updateCandles(rows, { preserveViewport: preserve, contextChanged });
-  applyRenderBundle(data.render, { redrawOverlays: true, panToNextMove: false });
+  applyRenderBundle(data.render, { redrawOverlays: true, panToNextMove: false, symbol: data.symbol || sym });
   if (viewportSnapshot) {
     restoreViewportDeferred(viewportSnapshot, rows.length);
   }
@@ -733,6 +775,7 @@ async function fetchFromLocal() {
   if (overlayState) clearOverlays(overlayState);
   updateSummary(null);
   updateNextMovePanel(null);
+  updateTradeSignalPanel(null, sym);
   $("sumMeta").innerHTML = `<b>${sym}</b> · ${tf} · ${rows.length} bars · local JSON`;
 }
 
@@ -761,6 +804,10 @@ function syncAutoRefresh() {
 
 function onToggleChange(ev) {
   saveSettings();
+  if (ev?.target?.id === "togTradeSignals") {
+    updateTradeSignalPanel(lastRender?.next_move, $("symbol")?.value?.trim());
+    return;
+  }
   if (lastRender && overlayState) {
     renderServerBundle(overlayState, lastRender, toggleState());
     updateNextMovePanel(lastRender.next_move);
@@ -769,6 +816,18 @@ function onToggleChange(ev) {
     }
   }
 }
+
+$("btnCopySignal").addEventListener("click", async () => {
+  if (!lastTradeSignal) return;
+  const text = signalSummaryText(lastTradeSignal);
+  try {
+    await navigator.clipboard.writeText(text);
+    $("btnCopySignal").textContent = "Copied!";
+    setTimeout(() => { $("btnCopySignal").textContent = "Copy order details"; }, 1500);
+  } catch (_) {
+    $("btnCopySignal").textContent = "Copy failed";
+  }
+});
 
 $("btnLoad").addEventListener("click", () => loadChart(false));
 $("btnConfigure").addEventListener("click", openConfigure);

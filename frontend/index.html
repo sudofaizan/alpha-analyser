@@ -101,6 +101,39 @@
     .legend .r3 i { background: var(--r3); }
     .legend .r4 i { background: var(--r4); }
     .chart-meta { font-size: .72rem; color: var(--muted); margin-left: .5rem; align-self: center; }
+    .signal-panel {
+      margin-bottom: .85rem; padding: .65rem; border-radius: 8px;
+      border: 1px solid var(--border); background: rgba(15,20,28,.9);
+      line-height: 1.45;
+    }
+    .signal-panel.hidden { display: none; }
+    .signal-head {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: .5rem; margin-bottom: .55rem;
+    }
+    .signal-action {
+      font-size: .85rem; font-weight: 800; letter-spacing: .06em;
+      padding: .2rem .55rem; border-radius: 4px;
+    }
+    .signal-action.buy { color: #052e16; background: var(--green); }
+    .signal-action.sell { color: #450a0a; background: var(--red); }
+    .signal-mode-tag {
+      font-size: .62rem; color: var(--muted); text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+    .signal-panel .row { display: flex; justify-content: space-between; padding: .28rem 0; border-bottom: 1px solid var(--border); font-size: .72rem; }
+    .signal-panel .row:last-child { border-bottom: none; }
+    .signal-panel .row b { color: var(--muted); font-weight: 500; }
+    .signal-panel .scenario { font-size: .68rem; color: var(--gold); margin: .45rem 0 .35rem; line-height: 1.4; }
+    .signal-panel .hint { font-size: .62rem; color: var(--muted); margin-top: .35rem; }
+    .signal-panel .btn-copy {
+      margin-top: .5rem; width: 100%; border: 1px solid var(--border);
+      background: var(--bg); color: var(--text); border-radius: 4px;
+      padding: .4rem; font-size: .68rem; font-weight: 600; cursor: pointer;
+    }
+    .signal-panel .btn-copy:hover { border-color: var(--gold); color: var(--gold); }
+    .cfg-hint { font-size: .65rem; color: var(--muted); margin-top: .35rem; line-height: 1.4; }
+    .cfg-soon { opacity: .55; pointer-events: none; margin-top: .45rem; }
     .next-move-box {
       margin-top: .75rem; padding: .5rem; border-radius: 6px;
       border: 1px solid var(--border); background: rgba(15,20,28,.8);
@@ -279,6 +312,19 @@
             </label>
           </div>
           <div class="cfg-section">
+            <h3>Trade signals</h3>
+            <label class="pa-toggle">
+              <input type="checkbox" id="togTradeSignals" /> Show order suggestions (Next move)
+            </label>
+            <p class="cfg-hint">Suggests entry, SL, TP from next-move analysis. Updates on each Load / auto refresh.</p>
+            <div class="cfg-toggles cfg-soon">
+              <span class="cfg-hint" style="display:block;margin-bottom:.35rem">Delivery (coming soon)</span>
+              <label class="pa-toggle sub"><input type="checkbox" checked disabled /> Dashboard</label>
+              <label class="pa-toggle sub"><input type="checkbox" disabled /> Telegram DM</label>
+              <label class="pa-toggle sub"><input type="checkbox" disabled /> MT5 EA auto trade</label>
+            </div>
+          </div>
+          <div class="cfg-section">
             <h3>Overlays</h3>
             <div class="cfg-toggles">
               <label class="pa-toggle"><input type="checkbox" id="togPriceAction" /> Price action</label>
@@ -321,6 +367,23 @@
         </div>
       </div>
       <aside class="sidepanel">
+        <div class="signal-panel hidden" id="signalPanel">
+          <div class="signal-head">
+            <span class="signal-action buy" id="sigAction">BUY</span>
+            <span class="signal-mode-tag">Dashboard signal</span>
+          </div>
+          <div class="scenario" id="sigScenario">—</div>
+          <div class="row"><b>Symbol</b><span class="val" id="sigSymbol">—</span></div>
+          <div class="row"><b>Order</b><span class="val" id="sigOrderType">—</span></div>
+          <div class="row"><b>Entry</b><span class="val" id="sigEntry">—</span></div>
+          <div class="row"><b>Stop loss</b><span class="val dn" id="sigSl">—</span></div>
+          <div class="row"><b>Take profit 1</b><span class="val up" id="sigTp1">—</span></div>
+          <div class="row"><b>Take profit 2</b><span class="val up" id="sigTp2">—</span></div>
+          <div class="row"><b>R:R</b><span class="val" id="sigRr">—</span></div>
+          <div class="row"><b>Confidence</b><span class="val" id="sigConf">—</span></div>
+          <div class="hint" id="sigEntryNote">—</div>
+          <button type="button" class="btn-copy" id="btnCopySignal">Copy order details</button>
+        </div>
         <h3>Price action read</h3>
         <div class="pa-summary" id="paSummary">
           <div class="row"><b>Structure</b><span class="val neu" id="sumStructure">—</span></div>
