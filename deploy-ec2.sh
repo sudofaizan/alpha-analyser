@@ -74,7 +74,23 @@ pip install -r requirements.txt -q
 
 if [[ ! -f .env ]]; then
   cp .env.example .env
-  echo "    Created ${INSTALL_DIR}/backend/.env — set ADMIN_EMAIL, ADMIN_PASSWORD, FLASK_SECRET_KEY"
+  echo "    Created ${INSTALL_DIR}/backend/.env from .env.example"
+fi
+# Admin credentials from repo (git pull → deploy). Password must be quoted if it contains #.
+if [[ -f "$REPO_DIR/backend/admin.env" ]]; then
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+    key="${line%%=*}"
+    val="${line#*=}"
+    key="$(echo "$key" | xargs)"
+    if [[ -z "$key" ]]; then continue; fi
+    if grep -q "^${key}=" .env 2>/dev/null; then
+      sed -i "s|^${key}=.*|${key}=${val}|" .env
+    else
+      echo "${key}=${val}" >> .env
+    fi
+  done < "$REPO_DIR/backend/admin.env"
+  echo "    Applied admin.env → ${INSTALL_DIR}/backend/.env"
 fi
 
 echo "==> Building frontend..."
@@ -125,21 +141,33 @@ if ! "$INSTALL_DIR/backend/recover_admin.sh"; then
   echo "    WARN: admin sync failed — edit ${INSTALL_DIR}/backend/.env"
 fi
 
-# Quick login smoke test
+# Quick login smoke test (read .env via Python — bash source breaks passwords with #)
 if command -v curl &>/dev/null && [[ -f "$INSTALL_DIR/backend/.env" ]]; then
-  # shellcheck disable=SC1091
-  set +u
-  source "$INSTALL_DIR/backend/.env" 2>/dev/null || true
-  set -u
-  if [[ -n "${ADMIN_EMAIL:-}" && -n "${ADMIN_PASSWORD:-}" ]]; then
+  read -r ADMIN_EMAIL ADMIN_PASSWORD < <(
+    cd "$INSTALL_DIR/backend"
+    "$INSTALL_DIR/backend/.venv/bin/python3" - <<'PY'
+import os, re
+from pathlib import Path
+env = Path(".env")
+if env.is_file():
+    for line in env.read_text().splitlines():
+        m = re.match(r"^([A-Za-z_]+)=(.*)$", line.strip())
+        if not m:
+            continue
+        k, v = m.group(1), m.group(2).strip().strip('"').strip("'")
+        os.environ.setdefault(k, v)
+print(os.environ.get("ADMIN_EMAIL", ""), os.environ.get("ADMIN_PASSWORD", ""))
+PY
+  )
+  if [[ -n "$ADMIN_EMAIL" && -n "$ADMIN_PASSWORD" ]]; then
     echo "==> Login smoke test (local API)..."
     RESP="$(curl -sf -X POST http://127.0.0.1:8090/api/auth/login \
       -H "Content-Type: application/json" \
-      -d "{\"email\":\"${ADMIN_EMAIL}\",\"password\":\"${ADMIN_PASSWORD}\"}" 2>/dev/null || echo '{"ok":false}')"
+      -d "$(printf '{"email":"%s","password":"%s"}' "$ADMIN_EMAIL" "$ADMIN_PASSWORD")" 2>/dev/null || echo '{"ok":false}')"
     if echo "$RESP" | grep -q '"ok":true'; then
       echo "    OK — admin login works"
     else
-      echo "    WARN — admin login failed; check ADMIN_PASSWORD in ${INSTALL_DIR}/backend/.env"
+      echo "    WARN — admin login failed; check admin.env / ${INSTALL_DIR}/backend/.env"
     fi
   fi
 fi
