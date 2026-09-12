@@ -25,7 +25,7 @@ for name in (".env", "telegram.env"):
             k, _, v = line.partition("=")
             os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
-from telegram_user_client import session_path, user_client_configured  # noqa: E402
+from telegram_user_client import ensure_session_path, session_path, user_client_configured  # noqa: E402
 
 
 async def main() -> None:
@@ -38,6 +38,7 @@ async def main() -> None:
 
     api_id = int(os.environ["TELEGRAM_USER_API_ID"])
     api_hash = os.environ["TELEGRAM_USER_API_HASH"]
+    ensure_session_path()
     path = str(session_path())
     print(f"Session file: {path}.session")
     print("You will receive an OTP in Telegram. Use the phone number of your channel admin account.\n")

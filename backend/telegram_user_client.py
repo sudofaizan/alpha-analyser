@@ -26,9 +26,20 @@ def user_client_configured() -> bool:
 
 
 def session_path() -> Path:
+    """Resolved session base path (Telethon appends .session). Supports ~ and relative paths."""
     raw = _cfg("TELEGRAM_USER_SESSION", ".telegram_user")
-    p = Path(raw)
-    return p if p.is_absolute() else _BACKEND_DIR / raw
+    p = Path(raw).expanduser()
+    if not p.is_absolute():
+        p = (_BACKEND_DIR / p).resolve()
+    else:
+        p = p.resolve()
+    return p
+
+
+def ensure_session_path() -> Path:
+    p = session_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    return p
 
 
 def _channel_id_int() -> int:
@@ -63,7 +74,7 @@ async def _client():
 
     api_id = int(_cfg("TELEGRAM_USER_API_ID"))
     api_hash = _cfg("TELEGRAM_USER_API_HASH")
-    path = str(session_path())
+    path = str(ensure_session_path())
     client = TelegramClient(path, api_id, api_hash)
     await client.connect()
     if not await client.is_user_authorized():
