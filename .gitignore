@@ -1,5 +1,6 @@
 backend/.venv/
 backend/.env
+backend/telegram.env
 backend/analyser.db
 frontend/node_modules/
 frontend/dist/

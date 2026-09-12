@@ -94,6 +94,7 @@
     .tg-status.ok { color: var(--green); }
     .tg-status.err { color: var(--red); }
     .tg-status.warn { color: var(--gold); }
+    .tg-open-bot { color: var(--gold); font-weight: 700; font-size: .78rem; }
     .cfg-foot {
       display: flex; justify-content: flex-end; gap: .5rem;
       padding: .75rem 1rem; border-top: 1px solid var(--border);
@@ -403,10 +404,14 @@
             </div>
             <div class="tg-actions">
               <button type="button" class="btn btn-gold" id="btnTgConnect">Add to signal channel</button>
+              <button type="button" class="btn btn-ghost" id="btnTgCheck">Check connection</button>
               <button type="button" class="btn btn-ghost" id="btnTgDisconnect">Disconnect</button>
             </div>
             <p class="cfg-hint tg-status" id="tgStatus">—</p>
             <p class="cfg-hint" id="tgBotHint" style="display:none"></p>
+            <p class="cfg-hint" id="tgBotLinkWrap" style="display:none;margin-top:.35rem">
+              <a id="tgBotLink" href="#" target="_blank" rel="noopener" class="tg-open-bot">Open bot in Telegram →</a>
+            </p>
           </div>
           <div class="cfg-section">
             <h3>Overlays</h3>

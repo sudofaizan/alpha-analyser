@@ -92,6 +92,21 @@ if [[ -f "$REPO_DIR/backend/admin.env" ]]; then
   done < "$REPO_DIR/backend/admin.env"
   echo "    Applied admin.env → ${INSTALL_DIR}/backend/.env"
 fi
+if [[ -f "$REPO_DIR/backend/telegram.env" ]]; then
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+    key="${line%%=*}"
+    val="${line#*=}"
+    key="$(echo "$key" | xargs)"
+    if [[ -z "$key" ]]; then continue; fi
+    if grep -q "^${key}=" .env 2>/dev/null; then
+      sed -i "s|^${key}=.*|${key}=${val}|" .env
+    else
+      echo "${key}=${val}" >> .env
+    fi
+  done < "$REPO_DIR/backend/telegram.env"
+  echo "    Applied telegram.env → ${INSTALL_DIR}/backend/.env"
+fi
 
 echo "==> Building frontend..."
 cd "$INSTALL_DIR/frontend"

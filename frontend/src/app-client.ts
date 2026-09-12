@@ -107,6 +107,7 @@ let sessionRepaintHooked = false;
 let lastTradeSignal = null;
 let lastActiveVirtualSignal = null;
 let lastMarketStatus = null;
+let tgPollTimer = null;
 
 function chartContextKey() {
   return [
@@ -777,23 +778,86 @@ function setTgStatus(text, kind = "") {
   el.className = `cfg-hint tg-status ${kind}`.trim();
 }
 
-async function refreshTelegramUi() {
+function showTgBotLink(botLink, botUsername) {
+  const wrap = $("tgBotLinkWrap");
+  const link = $("tgBotLink");
+  if (!wrap || !link) return;
+  if (!botLink) {
+    wrap.style.display = "none";
+    return;
+  }
+  link.href = botLink;
+  link.textContent = `Open @${botUsername || "bot"} in Telegram →`;
+  wrap.style.display = "block";
+}
+
+function stopTgPoll() {
+  if (tgPollTimer) {
+    clearInterval(tgPollTimer);
+    tgPollTimer = null;
+  }
+}
+
+function startTgPollIfPending(status) {
+  stopTgPoll();
+  if (status === "pending_bot" || status === "invite_sent" || status === "linked") {
+    tgPollTimer = setInterval(() => refreshTelegramUi(true), 4000);
+  }
+}
+
+async function refreshTelegramUi(silent = false) {
   const hint = $("tgBotHint");
   if (!$("tgUsername")) return;
   try {
     const data = await fetchTelegramStatus();
     const tg = data.telegram || {};
-    if (tg.username) $("tgUsername").value = tg.username.startsWith("@") ? tg.username : `@${tg.username}`;
-    setTgStatus(telegramStatusLabel(tg), tg.inChannel ? "ok" : tg.status === "pending_bot" ? "warn" : "");
-    if (hint) {
-      if (data.configured && tg.status === "pending_bot") {
-        hint.style.display = "block";
-        hint.textContent = `Then open @${tg.botUsername || "bot"} in Telegram and tap Start.`;
-      } else {
-        hint.style.display = "none";
-        hint.textContent = "";
-      }
+    if (!data.configured) {
+      setTgStatus("Telegram not configured on server (missing bot token)", "err");
+      $("tgBotLinkWrap").style.display = "none";
+      stopTgPoll();
+      return;
     }
+    if (tg.username) $("tgUsername").value = tg.username.startsWith("@") ? tg.username : `@${tg.username}`;
+    let msg = telegramStatusLabel(tg);
+    if (tg.pollerError && tg.status === "pending_bot") {
+      msg += ` — server: ${tg.pollerError}`;
+    }
+    setTgStatus(
+      msg,
+      tg.inChannel ? "ok" : tg.status === "invite_sent" ? "ok" : tg.status === "pending_bot" ? "warn" : "",
+    );
+    if (tg.inChannel || tg.status === "invite_sent") {
+      showTgBotLink(null);
+      $("tgBotHint").style.display = "none";
+      stopTgPoll();
+    } else if (tg.status === "pending_bot") {
+      showTgBotLink(tg.botLink, tg.botUsername);
+      if (hint) {
+        hint.style.display = "block";
+        hint.textContent = "Use the gold link above (not a generic bot search). Tap Start in Telegram, then wait or click Check connection.";
+      }
+      startTgPollIfPending(tg.status);
+    } else {
+      $("tgBotLinkWrap").style.display = "none";
+      if (hint) hint.style.display = "none";
+      stopTgPoll();
+    }
+  } catch (e) {
+    if (!silent) setTgStatus(e.message, "err");
+  }
+}
+
+async function checkTelegramConnection() {
+  const raw = $("tgUsername")?.value?.trim().replace(/^@/, "") || "";
+  setTgStatus("Checking…");
+  try {
+    const { ok, data, error } = await connectTelegram(raw);
+    if (!ok && data?.status !== "pending_bot") {
+      setTgStatus(error || data?.error || "Failed", "err");
+      return;
+    }
+    await refreshTelegramUi();
+    if (data?.message) setTgStatus(data.message, data.status === "in_channel" || data.status === "invite_sent" ? "ok" : "warn");
   } catch (e) {
     setTgStatus(e.message, "err");
   }
@@ -807,6 +871,7 @@ function openConfigure() {
 
 function closeConfigure() {
   saveSettings();
+  stopTgPoll();
   $("cfgOverlay").classList.remove("open");
   $("cfgOverlay").setAttribute("aria-hidden", "true");
 }
@@ -995,25 +1060,8 @@ $("btnCopySignal").addEventListener("click", async () => {
 
 $("btnLoad").addEventListener("click", () => loadChart(false));
 $("btnConfigure").addEventListener("click", openConfigure);
-$("btnTgConnect")?.addEventListener("click", async () => {
-  const raw = $("tgUsername")?.value?.trim().replace(/^@/, "") || "";
-  setTgStatus("Connecting…");
-  try {
-    const { ok, data, error } = await connectTelegram(raw);
-    if (!ok) {
-      setTgStatus(error || data?.error || "Failed", "err");
-      return;
-    }
-    setTgStatus(data.message || "Done", data.status === "in_channel" ? "ok" : "warn");
-    if (data.botLink) {
-      $("tgBotHint").style.display = "block";
-      $("tgBotHint").innerHTML = `<a href="${data.botLink}" target="_blank" rel="noopener">Open @${data.botUsername} in Telegram</a> and tap Start.`;
-    }
-    await refreshTelegramUi();
-  } catch (e) {
-    setTgStatus(e.message, "err");
-  }
-});
+$("btnTgConnect")?.addEventListener("click", () => checkTelegramConnection());
+$("btnTgCheck")?.addEventListener("click", () => checkTelegramConnection());
 $("btnTgDisconnect")?.addEventListener("click", async () => {
   if (!window.confirm("Remove Telegram channel access?")) return;
   try {
@@ -1021,6 +1069,8 @@ $("btnTgDisconnect")?.addEventListener("click", async () => {
     $("tgUsername").value = "";
     setTgStatus("Disconnected from signal channel", "ok");
     $("tgBotHint").style.display = "none";
+    $("tgBotLinkWrap").style.display = "none";
+    stopTgPoll();
   } catch (e) {
     setTgStatus(e.message, "err");
   }

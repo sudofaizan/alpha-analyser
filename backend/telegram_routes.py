@@ -18,9 +18,12 @@ telegram_bp = Blueprint("telegram", __name__, url_prefix="/api/telegram")
 @telegram_bp.route("/status", methods=["GET"])
 @login_required
 def telegram_status(user):
+    from telegram_service import _user_telegram_row
+
+    row = _user_telegram_row(user["id"]) or user
     return jsonify({
         "ok": True,
-        "telegram": telegram_public_status(user),
+        "telegram": telegram_public_status(row),
         "configured": telegram_enabled(),
     })
 

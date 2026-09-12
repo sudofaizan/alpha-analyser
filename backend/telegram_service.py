@@ -1,6 +1,7 @@
 """Telegram Bot API — channel invites, member removal, signal posts (backend only)."""
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import secrets
@@ -9,6 +10,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 from auth_db import (
@@ -23,6 +25,8 @@ from auth_db import (
 _POLLER_STOP = threading.Event()
 _POLLER_THREAD: threading.Thread | None = None
 _LAST_POLL_ERROR: str | None = None
+_POLLER_LOCK_FD = None
+_LOCK_PATH = Path(__file__).resolve().parent / ".telegram_poller.lock"
 
 
 def _cfg(name: str, default: str = "") -> str:
@@ -95,24 +99,36 @@ def _user_telegram_row(user_id: int) -> dict[str, Any] | None:
 def telegram_public_status(row: dict[str, Any] | None) -> dict[str, Any]:
     if not row:
         return {"enabled": telegram_enabled(), "status": "none"}
+    user_id = row.get("id")
+    if user_id:
+        fresh = _user_telegram_row(int(user_id)) or row
+        if fresh.get("telegram_user_id"):
+            try:
+                sync_membership(int(user_id))
+                fresh = _user_telegram_row(int(user_id)) or fresh
+            except Exception:
+                pass
+        row = fresh
     username = row.get("telegram_username")
     tg_id = row.get("telegram_user_id")
     joined = bool(row.get("telegram_channel_joined"))
+    code = row.get("telegram_link_code")
     if not telegram_enabled():
         return {
             "enabled": False,
             "status": "disabled",
             "username": username,
+            "pollerError": _LAST_POLL_ERROR,
         }
     if joined:
         st = "in_channel"
     elif tg_id:
-        st = "linked"
+        st = "invite_sent" if not joined else "linked"
     elif username:
         st = "pending_bot"
     else:
         st = "none"
-    return {
+    out = {
         "enabled": True,
         "status": st,
         "username": username,
@@ -120,7 +136,11 @@ def telegram_public_status(row: dict[str, Any] | None) -> dict[str, Any]:
         "inChannel": joined,
         "linkedAt": row.get("telegram_linked_at"),
         "botUsername": bot_username(),
+        "pollerError": _LAST_POLL_ERROR,
     }
+    if st == "pending_bot" and code:
+        out["botLink"] = bot_deep_link(f"link_{code}")
+    return out
 
 
 def save_telegram_username(user_id: int, username: str) -> tuple[dict[str, Any] | None, str | None]:
@@ -150,6 +170,23 @@ def get_user_by_link_code(code: str) -> dict[str, Any] | None:
         row = conn.execute(
             "SELECT * FROM users WHERE telegram_link_code=?",
             (code.strip(),),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def find_pending_user_by_tg_username(tg_username: str | None) -> dict[str, Any] | None:
+    """Match /start from bot when user opened bot directly (no deep-link code)."""
+    uname = normalize_username(tg_username or "")
+    if not uname:
+        return None
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT * FROM users
+            WHERE telegram_username=? AND telegram_user_id IS NULL
+            ORDER BY updated_at DESC LIMIT 1
+            """,
+            (uname,),
         ).fetchone()
     return dict(row) if row else None
 
@@ -343,15 +380,21 @@ def remove_user_from_channel(user_id: int, *, reason: str = "removed") -> dict[s
 def process_bot_start(tg_user_id: int, tg_username: str | None, start_arg: str) -> str:
     """Handle /start link_CODE from Telegram polling."""
     arg = (start_arg or "").strip()
-    if not arg.startswith("link_"):
-        return (
-            "Welcome to AlphaANALYSER signals.\n"
-            "Link your account from the dashboard Configure → Telegram section."
-        )
-    code = arg[5:]
-    user = get_user_by_link_code(code)
-    if not user:
-        return "Invalid or expired link. Re-save your username in Configure and try again."
+    user = None
+    if arg.startswith("link_"):
+        user = get_user_by_link_code(arg[5:])
+        if not user:
+            return "Invalid or expired link. Click Add to signal channel in Configure again."
+    else:
+        user = find_pending_user_by_tg_username(tg_username)
+        if not user:
+            return (
+                f"Welcome to AlphaANALYSER.\n\n"
+                f"1) Open Configure on analyser.alphafx.org\n"
+                f"2) Enter your Telegram username (@{tg_username or '?'})\n"
+                f"3) Click Add to signal channel\n"
+                f"4) Open the bot link shown and tap Start"
+            )
 
     link_telegram_account(int(user["id"]), tg_user_id, tg_username)
     ok, err = _can_access_channel(int(user["id"]))
@@ -462,6 +505,10 @@ def _poll_loop() -> None:
     global _LAST_POLL_ERROR
     if not telegram_enabled():
         return
+    try:
+        _api("deleteWebhook", {"drop_pending_updates": False})
+    except Exception as exc:
+        _LAST_POLL_ERROR = f"deleteWebhook: {exc}"
     offset = 0
     while not _POLLER_STOP.is_set():
         try:
@@ -484,11 +531,19 @@ def _poll_loop() -> None:
 
 
 def start_telegram_poller() -> None:
-    global _POLLER_THREAD
+    global _POLLER_THREAD, _POLLER_LOCK_FD
     if not telegram_enabled():
         print("telegram: disabled (set TELEGRAM_BOT_TOKEN + TELEGRAM_CHANNEL_ID)")
         return
     if _POLLER_THREAD and _POLLER_THREAD.is_alive():
+        return
+    # Only one poller across gunicorn workers (getUpdates allows one consumer).
+    try:
+        _LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _POLLER_LOCK_FD = open(_LOCK_PATH, "w")
+        fcntl.flock(_POLLER_LOCK_FD, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        print("telegram: poller already running in another worker")
         return
     _POLLER_THREAD = threading.Thread(target=_poll_loop, name="telegram-poller", daemon=True)
     _POLLER_THREAD.start()
