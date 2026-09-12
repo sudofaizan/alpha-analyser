@@ -573,6 +573,272 @@ def compute_next_move_public(
     }
 
 
+def _recent_bar_window(bars: list, lookback: int = 28) -> tuple[int, list]:
+    if not bars:
+        return 0, []
+    start = max(0, len(bars) - lookback)
+    return bars[-1]["time"], bars[start:]
+
+
+def _detect_level_tap_rejection(
+    bars: list,
+    swings: dict,
+    atr: float,
+) -> list[dict[str, Any]]:
+    """Price taps swing level then closes away — reversal confirmation."""
+    if len(bars) < 2 or atr <= 0:
+        return []
+    out: list[dict[str, Any]] = []
+    tail = bars[-4:]
+    tol = max(atr * 0.35, 1e-9)
+    for c in tail:
+        for sh in swings.get("highs", [])[-2:]:
+            if c["high"] >= sh["price"] - tol and c["close"] < c["open"]:
+                body = max(abs(c["close"] - c["open"]), 1e-9)
+                if c["high"] - max(c["open"], c["close"]) > body * 0.8:
+                    out.append({
+                        "side": "bear",
+                        "type": "level_tap",
+                        "text": "Tap resistance + rejection",
+                        "time": c["time"],
+                        "level": sh["price"],
+                    })
+        for sl in swings.get("lows", [])[-2:]:
+            if c["low"] <= sl["price"] + tol and c["close"] > c["open"]:
+                body = max(abs(c["close"] - c["open"]), 1e-9)
+                if min(c["open"], c["close"]) - c["low"] > body * 0.8:
+                    out.append({
+                        "side": "bull",
+                        "type": "level_tap",
+                        "text": "Tap support + rejection",
+                        "time": c["time"],
+                        "level": sl["price"],
+                    })
+    return out
+
+
+def _collect_signal_confirmations(
+    bars: list,
+    swings: dict,
+    r3_markers: list,
+    rsi_events: list,
+    analysis: dict | None,
+    atr: float,
+    lookback: int = 28,
+) -> list[dict[str, Any]]:
+    last_t, window = _recent_bar_window(bars, lookback)
+    if not window:
+        return []
+    min_t = window[0]["time"]
+    items: list[dict[str, Any]] = []
+
+    for m in r3_markers:
+        t = m.get("time")
+        if t is None or t < min_t:
+            continue
+        side = "bull" if m.get("position") == "belowBar" else "bear"
+        items.append({
+            "side": side,
+            "type": "candle_pattern",
+            "text": f"{m.get('text', 'Pattern')} at level",
+            "time": t,
+        })
+
+    for e in rsi_events:
+        t = e.get("signal_time") or e.get("p2_time")
+        if t is None or t < min_t:
+            continue
+        items.append({
+            "side": e.get("side"),
+            "type": "rsi_div",
+            "text": f"{'Bull' if e.get('side') == 'bull' else 'Bear'} RSI divergence",
+            "time": t,
+        })
+
+    for tap in _detect_level_tap_rejection(bars, swings, atr):
+        if tap["time"] >= min_t:
+            items.append(tap)
+
+    smc = (analysis or {}).get("smc") or {}
+    last_break = smc.get("last_break") or ""
+    if last_break:
+        lb = str(last_break).lower()
+        if "bull" in lb or "up" in lb:
+            items.append({"side": "bull", "type": "smc", "text": f"SMC {last_break}", "time": last_t})
+        elif "bear" in lb or "down" in lb:
+            items.append({"side": "bear", "type": "smc", "text": f"SMC {last_break}", "time": last_t})
+
+    items.sort(key=lambda x: x.get("time") or 0, reverse=True)
+    dedup: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for it in items:
+        key = f"{it.get('type')}|{it.get('text')}"
+        if key in seen:
+            continue
+        seen.add(key)
+        dedup.append(it)
+    return dedup[:6]
+
+
+def _pick_limit_entry(
+    action: str,
+    next_move: dict,
+    price: float,
+    swings: dict,
+    order_blocks: list,
+    atr: float,
+) -> float:
+    t1 = float(next_move["t1"])
+    if action == "BUY":
+        for ob in order_blocks:
+            if str(ob.get("type", "")).upper().startswith("BULL"):
+                mid = (float(ob["high"]) + float(ob["low"])) / 2
+                if mid <= price and abs(mid - t1) <= atr * 2:
+                    return mid
+        if swings.get("lows"):
+            sup = float(swings["lows"][-1]["price"])
+            if abs(sup - t1) <= atr * 1.5:
+                return sup
+    else:
+        for ob in order_blocks:
+            if str(ob.get("type", "")).upper().startswith("BEAR"):
+                mid = (float(ob["high"]) + float(ob["low"])) / 2
+                if mid >= price and abs(mid - t1) <= atr * 2:
+                    return mid
+        if swings.get("highs"):
+            res = float(swings["highs"][-1]["price"])
+            if abs(res - t1) <= atr * 1.5:
+                return res
+    return t1
+
+
+def compute_trade_signal(
+    bars: list,
+    swings: dict,
+    structure: dict,
+    next_move: dict | None,
+    r3_markers: list,
+    rsi_events: list,
+    analysis: dict | None,
+    order_blocks: list | None,
+    symbol: str = "",
+) -> dict[str, Any] | None:
+    """
+    Smart order suggestion:
+    - HIGH: confirmation (RSI div / engulf / pin / level tap) + limit on pullback
+    - MEDIUM: confirmed market or unconfirmed continuation
+    - LOW: limit without confirmation
+    """
+    if not bars or not next_move or not next_move.get("dir"):
+        return None
+
+    price = float(bars[-1]["close"])
+    atr = float((analysis or {}).get("chart", {}).get("atr") or calc_atr(bars))
+    dir_ = next_move["dir"]
+    action = "BUY" if dir_ == "UP" else "SELL" if dir_ == "DOWN" else None
+    if not action:
+        return None
+
+    sl = float(next_move["invalid"])
+    tp1 = float(next_move["t1"])
+    tp2 = float(next_move["t2"]) if next_move.get("t2") is not None else None
+    if sl != sl or tp1 != tp1:
+        return None
+
+    want_side = "bull" if action == "BUY" else "bear"
+    all_conf = _collect_signal_confirmations(bars, swings, r3_markers, rsi_events, analysis, atr)
+    aligned = [c for c in all_conf if c.get("side") == want_side]
+    has_confirm = len(aligned) > 0
+
+    scenario = str(next_move.get("scenario") or "")
+    sc_low = scenario.lower()
+    is_pullback = any(k in sc_low for k in ("pullback", "retest", "bounce to", "fade toward"))
+
+    obs = list(order_blocks or [])
+    base_conf = int(next_move.get("confidence") or 50)
+    confidence = base_conf
+    confirm_texts = [c["text"] for c in aligned[:3]]
+
+    if has_confirm:
+        confidence += 14 + min(8, len(aligned) * 3)
+    else:
+        confidence -= 12 if is_pullback else 8
+
+    if structure.get("trend") == ("UP" if action == "BUY" else "DOWN"):
+        confidence += 4
+    elif structure.get("trend") not in ("NEUTRAL", None):
+        confidence -= 6
+
+    confidence = max(25, min(92, confidence))
+
+    if has_confirm and is_pullback:
+        strategy = "CONFIRMED_PULLBACK"
+        order_type = "LIMIT"
+        tier = "HIGH"
+        entry = _pick_limit_entry(action, next_move, price, swings, obs, atr)
+        entry_note = (
+            f"{action} LIMIT after confirmation — enter on pullback"
+            + (f" ({confirm_texts[0]})" if confirm_texts else "")
+        )
+    elif has_confirm:
+        strategy = "CONFIRMED_MARKET"
+        order_type = "MARKET"
+        tier = "HIGH"
+        entry = price
+        entry_note = f"Confirmed setup ({confirm_texts[0]}) — market {action.lower()}"
+    elif is_pullback:
+        strategy = "UNCONFIRMED_LIMIT"
+        order_type = "LIMIT"
+        tier = "LOW"
+        entry = _pick_limit_entry(action, next_move, price, swings, obs, atr)
+        entry_note = f"{action} LIMIT at retest — no RSI/pin confirmation yet (lower edge)"
+    else:
+        strategy = "UNCONFIRMED_MARKET"
+        order_type = "MARKET"
+        tier = "MEDIUM"
+        entry = price
+        entry_note = f"Direct market {action.lower()} — wait for engulf/RSI div for higher confidence"
+
+    risk = abs(entry - sl)
+    reward = abs(tp1 - entry)
+    rr = round(reward / risk, 2) if risk > 1e-9 else None
+
+    wait_for = None
+    if order_type == "LIMIT":
+        dist_pct = abs(price - entry) / max(price, 1e-9)
+        if dist_pct > 0.0008:
+            wait_for = (
+                f"Price {price:.2f} — wait for pullback to {entry:.2f} "
+                f"then place {action} LIMIT"
+            )
+
+    def _fmt(p: float) -> str:
+        return f"{p:.2f}" if abs(p) >= 100 else f"{p:.5f}" if abs(p) < 10 else f"{p:.3f}"
+
+    return {
+        "symbol": symbol,
+        "action": action,
+        "orderType": order_type,
+        "strategy": strategy,
+        "confidenceTier": tier,
+        "entry": round(entry, 5),
+        "entryFmt": _fmt(entry),
+        "sl": round(sl, 5),
+        "slFmt": _fmt(sl),
+        "tp1": round(tp1, 5),
+        "tp1Fmt": _fmt(tp1),
+        "tp2": round(tp2, 5) if tp2 is not None else None,
+        "tp2Fmt": _fmt(tp2) if tp2 is not None else None,
+        "rr": str(rr) if rr is not None else None,
+        "confidence": confidence,
+        "scenario": scenario,
+        "entryNote": entry_note,
+        "confirmations": confirm_texts,
+        "waitFor": wait_for,
+        "currentPrice": round(price, 5),
+    }
+
+
 def _add_line(spec: dict, t0: int, t1: int, price: float, color: str, width: int = 1, style: int = 0) -> None:
     if t0 >= t1:
         return
@@ -687,6 +953,7 @@ def build_render_spec(
         return {
             "summary": {},
             "next_move": None,
+            "trade_signal": None,
             "layers": {
                 "r1": r1, "r2": r2, "r3": r3_l, "rsi_div": rsi_div_l, "pd_levels": pd_l,
                 "smc": smc_l, "beluga": beluga_l, "next_move": nm_l,
@@ -856,9 +1123,23 @@ def build_render_spec(
     if next_move:
         public_next = {k: v for k, v in next_move.items() if k not in ("path", "fibLevels")}
 
+    trade_signal = None
+    if next_move:
+        trade_signal = compute_trade_signal(
+            bars,
+            swings,
+            structure,
+            next_move,
+            r3_markers,
+            rsi_div_events,
+            analysis,
+            pool[:5],
+        )
+
     return {
         "summary": summary,
         "next_move": public_next,
+        "trade_signal": trade_signal,
         "layers": {
             "r1": r1, "r2": r2, "r3": r3_l, "rsi_div": rsi_div_l, "pd_levels": pd_l,
             "smc": smc_l, "beluga": beluga_l, "next_move": nm_l,

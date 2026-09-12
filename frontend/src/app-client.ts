@@ -15,7 +15,20 @@ import {
   createOverlayState,
   renderServerBundle,
 } from "./renderer";
-import { buildTradeSignal, signalSummaryText } from "./trade-signal";
+import {
+  displaySignalId,
+  fetchSignalHistory,
+  marketStatusClass,
+  marketStatusLabel,
+  renderHistoryTable,
+  trackingStatusText,
+} from "./signal-history";
+import {
+  resolveTradeSignal,
+  signalSummaryText,
+  strategyLabel,
+  tierLabel,
+} from "./trade-signal";
 
 const LightweightCharts = window.LightweightCharts;
 const $ = (id) => document.getElementById(id);
@@ -85,6 +98,8 @@ let viewportApplying = false;
 let chartViewSaveTimer = null;
 let sessionRepaintHooked = false;
 let lastTradeSignal = null;
+let lastActiveVirtualSignal = null;
+let lastMarketStatus = null;
 
 function chartContextKey() {
   return [
@@ -425,21 +440,28 @@ function updateSummary(summary) {
   $("sumPdl").textContent = summary.pdl != null ? fmtPrice(summary.pdl) : "—";
 }
 
-function updateTradeSignalPanel(nm, symbol) {
+function updateTradeSignalPanel(nm, symbol, apiSignal = null) {
   const panel = $("signalPanel");
   if (!$("togTradeSignals")?.checked) {
     panel.classList.add("hidden");
     lastTradeSignal = null;
     return;
   }
+  const sym = symbol || $("symbol")?.value?.trim();
   const lastPrice = lastCandles.length ? lastCandles[lastCandles.length - 1].close : null;
-  const sig = buildTradeSignal(nm, lastPrice, symbol || $("symbol")?.value?.trim());
+  const sig = resolveTradeSignal(apiSignal, nm, lastPrice, sym);
   lastTradeSignal = sig;
   if (!sig) {
     panel.classList.remove("hidden");
     $("sigAction").textContent = "—";
     $("sigAction").className = "signal-action";
+    $("sigTier").textContent = "—";
+    $("sigTier").className = "signal-tier";
     $("sigScenario").textContent = nm ? "Insufficient data for order levels" : "Load chart to generate signal";
+    $("sigStrategy").textContent = "—";
+    $("sigConfirmations").style.display = "none";
+    $("sigWaitFor").style.display = "none";
+    $("sigId").textContent = "—";
     ["sigSymbol", "sigOrderType", "sigEntry", "sigSl", "sigTp1", "sigTp2", "sigRr", "sigConf"].forEach((id) => {
       $(id).textContent = "—";
     });
@@ -450,16 +472,95 @@ function updateTradeSignalPanel(nm, symbol) {
   const actionEl = $("sigAction");
   actionEl.textContent = sig.action;
   actionEl.className = `signal-action ${sig.action === "BUY" ? "buy" : "sell"}`;
+  const tier = (sig.confidenceTier || "MEDIUM").toLowerCase();
+  $("sigTier").textContent = tierLabel(sig.confidenceTier);
+  $("sigTier").className = `signal-tier ${tier === "high" ? "high" : tier === "low" ? "low" : "medium"}`;
   $("sigScenario").textContent = sig.scenario;
+  $("sigStrategy").textContent = strategyLabel(sig.strategy);
+  const confEl = $("sigConfirmations");
+  if (sig.confirmations?.length) {
+    confEl.innerHTML = sig.confirmations.map((c) => `<li>${c}</li>`).join("");
+    confEl.style.display = "block";
+  } else {
+    confEl.innerHTML = "";
+    confEl.style.display = "none";
+  }
+  const waitEl = $("sigWaitFor");
+  if (sig.waitFor) {
+    waitEl.textContent = sig.waitFor;
+    waitEl.style.display = "block";
+  } else {
+    waitEl.textContent = "";
+    waitEl.style.display = "none";
+  }
   $("sigSymbol").textContent = sig.symbol;
   $("sigOrderType").textContent = sig.orderType;
   $("sigEntry").textContent = sig.entryFmt;
   $("sigSl").textContent = sig.slFmt;
   $("sigTp1").textContent = sig.tp1Fmt;
   $("sigTp2").textContent = sig.tp2Fmt;
-  $("sigRr").textContent = sig.rr !== "—" ? `1 : ${sig.rr}` : "—";
+  $("sigRr").textContent = sig.rr ? `1 : ${sig.rr}` : "—";
   $("sigConf").textContent = sig.confidence != null ? `~${sig.confidence}%` : "—";
-  $("sigEntryNote").textContent = sig.entryNote;
+  $("sigEntryNote").textContent = sig.entryNote || "";
+  updateVirtualTrackingPanel(lastActiveVirtualSignal);
+}
+
+function updateMarketBadge(meta) {
+  const el = $("marketBadge");
+  if (!el) return;
+  const status = meta?.market_status || lastMarketStatus || "UNKNOWN";
+  lastMarketStatus = status;
+  el.textContent = marketStatusLabel(status);
+  el.className = `market-badge ${marketStatusClass(status)}`;
+  const reason = meta?.market_status_reason;
+  el.title = reason ? `${marketStatusLabel(status)} — ${reason}` : marketStatusLabel(status);
+}
+
+function updateVirtualTrackingPanel(active) {
+  const trackEl = $("sigTrack");
+  const idEl = $("sigId");
+  if (idEl) {
+    idEl.textContent = active ? displaySignalId(active) : "—";
+  }
+  if (!trackEl) return;
+  if (!$("togTradeSignals")?.checked || !active) {
+    trackEl.classList.add("hidden");
+    return;
+  }
+  const txt = trackingStatusText(active);
+  const price = active.lastPrice != null ? ` · last ${fmtPrice(active.lastPrice)}` : "";
+  trackEl.textContent = txt ? `${txt}${price}` : "Virtual tracking active";
+  trackEl.classList.remove("hidden");
+}
+
+function applySignalTracking(tracking, meta) {
+  lastActiveVirtualSignal = tracking?.active || null;
+  updateMarketBadge(meta || {});
+  updateVirtualTrackingPanel(lastActiveVirtualSignal);
+}
+
+async function loadSignalHistory() {
+  const body = $("histBody");
+  if (!body) return;
+  body.innerHTML = '<p class="hist-empty">Loading…</p>';
+  try {
+    const sym = $("symbol")?.value?.trim() || "";
+    const signals = await fetchSignalHistory(apiUrl, sym, 80);
+    renderHistoryTable(body, signals);
+  } catch (e) {
+    body.innerHTML = `<p class="hist-empty err">${e.message}</p>`;
+  }
+}
+
+function openSignalHistory() {
+  $("histOverlay").classList.add("open");
+  $("histOverlay").setAttribute("aria-hidden", "false");
+  loadSignalHistory();
+}
+
+function closeSignalHistory() {
+  $("histOverlay").classList.remove("open");
+  $("histOverlay").setAttribute("aria-hidden", "true");
 }
 
 function updateNextMovePanel(nm) {
@@ -514,7 +615,7 @@ function applyRenderBundle(render, { redrawOverlays = true, panToNextMove = fals
   lastRender = render;
   updateSummary(render.summary);
   updateNextMovePanel(render.next_move);
-  updateTradeSignalPanel(render.next_move, symbol);
+  updateTradeSignalPanel(render.next_move, symbol, render.trade_signal);
   if (redrawOverlays && overlayState) {
     renderServerBundle(overlayState, render, toggleState());
     if (panToNextMove) ensureNextMoveVisible(lastCandles);
@@ -734,6 +835,7 @@ async function fetchFromApi(silent = false) {
   const viewportSnapshot = preserve ? captureViewport() : null;
   updateCandles(rows, { preserveViewport: preserve, contextChanged });
   applyRenderBundle(data.render, { redrawOverlays: true, panToNextMove: false, symbol: data.symbol || sym });
+  applySignalTracking(data.signal_tracking, data.meta);
   if (viewportSnapshot) {
     restoreViewportDeferred(viewportSnapshot, rows.length);
   }
@@ -776,6 +878,7 @@ async function fetchFromLocal() {
   updateSummary(null);
   updateNextMovePanel(null);
   updateTradeSignalPanel(null, sym);
+  applySignalTracking(null, null);
   $("sumMeta").innerHTML = `<b>${sym}</b> · ${tf} · ${rows.length} bars · local JSON`;
 }
 
@@ -805,7 +908,7 @@ function syncAutoRefresh() {
 function onToggleChange(ev) {
   saveSettings();
   if (ev?.target?.id === "togTradeSignals") {
-    updateTradeSignalPanel(lastRender?.next_move, $("symbol")?.value?.trim());
+    updateTradeSignalPanel(lastRender?.next_move, $("symbol")?.value?.trim(), lastRender?.trade_signal);
     return;
   }
   if (lastRender && overlayState) {
@@ -819,7 +922,10 @@ function onToggleChange(ev) {
 
 $("btnCopySignal").addEventListener("click", async () => {
   if (!lastTradeSignal) return;
-  const text = signalSummaryText(lastTradeSignal);
+  const copySig = lastActiveVirtualSignal?.signalId
+    ? { ...lastTradeSignal, signalId: lastActiveVirtualSignal.signalId }
+    : lastTradeSignal;
+  const text = signalSummaryText(copySig);
   try {
     await navigator.clipboard.writeText(text);
     $("btnCopySignal").textContent = "Copied!";
@@ -831,6 +937,14 @@ $("btnCopySignal").addEventListener("click", async () => {
 
 $("btnLoad").addEventListener("click", () => loadChart(false));
 $("btnConfigure").addEventListener("click", openConfigure);
+$("btnSignalHistory").addEventListener("click", openSignalHistory);
+$("btnHistClose").addEventListener("click", closeSignalHistory);
+$("btnHistDone").addEventListener("click", closeSignalHistory);
+$("btnHistRefresh").addEventListener("click", () => loadSignalHistory());
+$("histOverlay").addEventListener("click", (ev) => {
+  if (ev.target === $("histOverlay")) closeSignalHistory();
+});
+document.querySelector(".hist-modal")?.addEventListener("click", (ev) => ev.stopPropagation());
 $("btnCfgClose").addEventListener("click", closeConfigure);
 $("btnCfgCancel").addEventListener("click", closeConfigure);
 $("btnCfgApply").addEventListener("click", () => {
@@ -844,7 +958,9 @@ $("cfgOverlay").addEventListener("click", (ev) => {
 });
 document.querySelector(".cfg-modal")?.addEventListener("click", (ev) => ev.stopPropagation());
 document.addEventListener("keydown", (ev) => {
-  if (ev.key === "Escape" && $("cfgOverlay").classList.contains("open")) closeConfigure();
+  if (ev.key !== "Escape") return;
+  if ($("histOverlay").classList.contains("open")) closeSignalHistory();
+  else if ($("cfgOverlay").classList.contains("open")) closeConfigure();
 });
 window.addEventListener("beforeunload", () => saveSettings());
 $("togAutoRefresh").addEventListener("change", () => { saveSettings(); syncAutoRefresh(); });

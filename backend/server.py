@@ -35,6 +35,15 @@ from alpha_analyser_engine import HTF_MAP, build_render_spec  # noqa: E402
 from auth_db import ensure_admin_bootstrap, init_db  # noqa: E402
 from auth_routes import auth_bp, admin_bp, subscription_required  # noqa: E402
 from mt5_upstream import candles_to_bars, fetch_analysis, fetch_candles  # noqa: E402
+from signal_tracker import (  # noqa: E402
+    fetch_m5_market_snapshot,
+    get_signal_by_id,
+    list_signal_history,
+    parse_signal_id_ref,
+    process_user_symbol_signals,
+    public_signal_row,
+    start_signal_ticker,
+)
 
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
@@ -114,7 +123,7 @@ def health():
 
 @app.route("/getChartBundle")
 @subscription_required
-def get_chart_bundle(_user):
+def get_chart_bundle(user):
     symbol = request.args.get("symbol", "").strip()
     if not symbol:
         return jsonify({"ok": False, "error": "symbol required"}), 400
@@ -124,11 +133,72 @@ def get_chart_bundle(_user):
         result = build_chart_bundle(symbol, chart_tf, count)
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 502
+    if result.get("ok"):
+        m5_snap = fetch_m5_market_snapshot(result.get("symbol") or symbol)
+        trade_sig = (result.get("render") or {}).get("trade_signal")
+        tracking = process_user_symbol_signals(
+            user["id"],
+            result.get("symbol") or symbol,
+            chart_tf,
+            trade_sig,
+            m5_snap,
+        )
+        result["meta"] = result.get("meta") or {}
+        result["meta"]["market_status"] = tracking["market"].get("status", "UNKNOWN")
+        result["meta"]["market_status_reason"] = tracking["market"].get("reason")
+        result["meta"]["market_last_close"] = tracking["market"].get("last_close")
+        result["signal_tracking"] = {
+            "active": public_signal_row(tracking.get("active_signal")),
+            "lastPrice": tracking.get("last_price"),
+        }
     return jsonify(result), (200 if result.get("ok") else 400)
+
+
+@app.route("/api/signals/history")
+@subscription_required
+def signal_history(user):
+    symbol = request.args.get("symbol", "").strip() or None
+    limit = max(1, min(int(request.args.get("limit", 50)), 200))
+    rows = list_signal_history(user["id"], symbol, limit)
+    return jsonify({
+        "ok": True,
+        "signals": [public_signal_row(r) for r in rows],
+    })
+
+
+@app.route("/api/signals/<signal_ref>")
+@subscription_required
+def signal_by_ref(user, signal_ref):
+    sid = parse_signal_id_ref(signal_ref)
+    if sid is None:
+        return jsonify({"ok": False, "error": "invalid signal id"}), 400
+    row = get_signal_by_id(user["id"], sid)
+    if not row:
+        return jsonify({"ok": False, "error": "signal not found"}), 404
+    return jsonify({"ok": True, "signal": public_signal_row(row)})
+
+
+@app.route("/api/market-status")
+@subscription_required
+def market_status(_user):
+    symbol = request.args.get("symbol", "").strip()
+    if not symbol:
+        return jsonify({"ok": False, "error": "symbol required"}), 400
+    snap = fetch_m5_market_snapshot(symbol)
+    market = snap.get("market") or {}
+    return jsonify({
+        "ok": True,
+        "symbol": symbol,
+        "status": market.get("status", "UNKNOWN"),
+        "reason": market.get("reason"),
+        "lastClose": market.get("last_close"),
+        "lastPrice": (snap.get("last_bar") or {}).get("close"),
+    })
 
 
 init_db()
 ensure_admin_bootstrap()
+start_signal_ticker(interval_sec=45)
 
 if __name__ == "__main__":
     print(f"Alpha Analyser API on :{PORT}")

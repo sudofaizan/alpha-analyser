@@ -65,6 +65,9 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
             """
         )
+    from signal_tracker import init_signal_tables  # noqa: WPS433
+
+    init_signal_tables()
 
 
 def _row_to_user(row: sqlite3.Row | None) -> dict[str, Any] | None:
