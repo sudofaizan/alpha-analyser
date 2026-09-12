@@ -31,17 +31,21 @@ def telegram_status(user):
 @telegram_bp.route("/connect", methods=["POST"])
 @subscription_required
 def telegram_connect(user):
-    data = request.get_json(silent=True) or {}
-    username = str(data.get("username", "")).strip()
-    if not username:
-        username = user.get("telegram_username") or ""
-    if username:
-        _, err = save_telegram_username(user["id"], username)
-        if err:
-            return jsonify({"ok": False, "error": err}), 400
-    result = add_user_to_channel(user["id"])
-    code = 200 if result.get("ok") else 400
-    return jsonify(result), code
+    try:
+        data = request.get_json(silent=True) or {}
+        username = str(data.get("username", "")).strip()
+        if not username:
+            username = user.get("telegram_username") or ""
+        if username:
+            _, err = save_telegram_username(user["id"], username)
+            if err:
+                return jsonify({"ok": False, "error": err}), 400
+        result = add_user_to_channel(user["id"])
+        code = 200 if result.get("ok") else 400
+        return jsonify(result), code
+    except Exception as exc:
+        print(f"telegram connect error user={user.get('id')}: {exc}")
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 
 @telegram_bp.route("/disconnect", methods=["POST"])

@@ -262,6 +262,17 @@ def telegram_health_report() -> dict[str, Any]:
                     True,
                     f"@{st.get('username')} (id {st.get('userId')})",
                 )
+                try:
+                    from telegram_user_client import test_channel_access
+
+                    ch = test_channel_access()
+                    add_check(
+                        "channel in user dialogs",
+                        bool(ch.get("ok")),
+                        ch.get("title") or ch.get("error") or "?",
+                    )
+                except Exception as exc:
+                    add_check("channel in user dialogs", False, str(exc))
             else:
                 add_check(
                     "user session logged in",
@@ -487,6 +498,8 @@ def _try_direct_add(user_id: int, username: str) -> dict[str, Any] | None:
         if "not logged in" in msg.lower() or "session" in msg.lower():
             return None
         return {"ok": False, "error": msg}
+    except Exception as exc:
+        return {"ok": False, "error": f"Direct add failed: {exc}"}
 
 
 def add_user_to_channel(user_id: int) -> dict[str, Any]:

@@ -6,13 +6,14 @@ Your account must be admin of the signal channel with permission to add members.
 from __future__ import annotations
 
 import asyncio
+import fcntl
 import os
 import threading
 from pathlib import Path
 from typing import Any
 
 _CLIENT_LOCK = threading.Lock()
-_LOOP: asyncio.AbstractEventLoop | None = None
+_PROCESS_LOCK_PATH = Path(__file__).resolve().parent / ".telegram_user_client.lock"
 
 _BACKEND_DIR = Path(__file__).resolve().parent
 
@@ -50,17 +51,20 @@ def _channel_id_int() -> int:
 
 
 def _run(coro: Any) -> Any:
-    global _LOOP
+    """Run Telethon coroutine — one at a time across threads and gunicorn workers."""
     with _CLIENT_LOCK:
+        _PROCESS_LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+        lock_fd = open(_PROCESS_LOCK_PATH, "w")
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_closed():
-                raise RuntimeError("closed")
-        except RuntimeError:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
             loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            _LOOP = loop
-        return loop.run_until_complete(coro)
+            try:
+                return loop.run_until_complete(coro)
+            finally:
+                loop.close()
+        finally:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            lock_fd.close()
 
 
 class DirectInviteError(Exception):
@@ -86,10 +90,26 @@ async def _client():
     return client
 
 
+async def _resolve_channel(client) -> Any:
+    """Private channels often need dialog lookup — get_entity(id) alone can fail."""
+    cid = _channel_id_int()
+    try:
+        return await client.get_entity(cid)
+    except (ValueError, TypeError):
+        pass
+    async for dialog in client.iter_dialogs():
+        if dialog.id == cid:
+            return dialog.entity
+    raise DirectInviteError(
+        f"Channel {cid} not in your Telegram dialogs — open it once as @admin, then retry"
+    )
+
+
 async def _direct_invite_async(username: str) -> int:
     from telethon.errors import (
         ChatAdminRequiredError,
         FloodWaitError,
+        RPCError,
         UserAlreadyParticipantError,
         UserNotMutualContactError,
         UserPrivacyRestrictedError,
@@ -105,12 +125,14 @@ async def _direct_invite_async(username: str) -> int:
     client = await _client()
     try:
         user = await client.get_entity(uname)
-        channel = await client.get_entity(_channel_id_int())
+        channel = await _resolve_channel(client)
         try:
             await client(InviteToChannelRequest(channel, [user]))
         except UserAlreadyParticipantError:
             pass
         return int(user.id)
+    except DirectInviteError:
+        raise
     except UsernameNotOccupiedError:
         raise DirectInviteError(f"Telegram username @{uname} not found") from None
     except UsernameInvalidError:
@@ -131,6 +153,10 @@ async def _direct_invite_async(username: str) -> int:
         ) from None
     except FloodWaitError as exc:
         raise DirectInviteError(f"Telegram rate limit — retry in {exc.seconds}s") from exc
+    except RPCError as exc:
+        raise DirectInviteError(f"Telegram: {exc}") from exc
+    except ValueError as exc:
+        raise DirectInviteError(str(exc)) from exc
     finally:
         await client.disconnect()
 
@@ -142,7 +168,7 @@ async def _direct_remove_async(tg_user_id: int) -> None:
 
     client = await _client()
     try:
-        channel = await client.get_entity(_channel_id_int())
+        channel = await _resolve_channel(client)
         user = await client.get_entity(int(tg_user_id))
         rights = ChatBannedRights(until_date=None, view_messages=True)
         try:
@@ -198,3 +224,22 @@ def user_client_status() -> dict[str, Any]:
         return _run(_session_status_async())
     except Exception as exc:
         return {"configured": True, "authorized": False, "error": str(exc)}
+
+
+async def _test_channel_access_async() -> dict[str, Any]:
+    client = await _client()
+    try:
+        ch = await _resolve_channel(client)
+        title = getattr(ch, "title", None) or getattr(ch, "username", None) or "?"
+        return {"ok": True, "title": title}
+    finally:
+        await client.disconnect()
+
+
+def test_channel_access() -> dict[str, Any]:
+    try:
+        return _run(_test_channel_access_async())
+    except DirectInviteError as exc:
+        return {"ok": False, "error": str(exc)}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
