@@ -43,11 +43,31 @@ def ensure_session_path() -> Path:
     return p
 
 
-def _channel_id_int() -> int:
-    raw = _cfg("TELEGRAM_CHANNEL_ID")
-    if not raw:
+def validate_channel_id(raw: str | int | None = None) -> int:
+    """Channel ids are negative (-100…). A positive id is almost always a user id (wrong)."""
+    val = str(raw if raw is not None else _cfg("TELEGRAM_CHANNEL_ID")).strip()
+    if not val:
         raise RuntimeError("TELEGRAM_CHANNEL_ID not configured")
-    return int(raw)
+    try:
+        cid = int(val)
+    except ValueError as exc:
+        raise DirectInviteError(f"TELEGRAM_CHANNEL_ID must be numeric, got {val!r}") from exc
+    if cid > 0:
+        raise DirectInviteError(
+            f"TELEGRAM_CHANNEL_ID={cid} is a user id, not a channel. "
+            "Set your signal channel id (-100xxxxxxxxxx). "
+            "Run: sudo .venv/bin/python list_telegram_channels.py"
+        )
+    if not str(cid).startswith("-100"):
+        raise DirectInviteError(
+            f"TELEGRAM_CHANNEL_ID={cid} should start with -100. "
+            "Run: sudo .venv/bin/python list_telegram_channels.py"
+        )
+    return cid
+
+
+def _channel_id_int() -> int:
+    return validate_channel_id()
 
 
 def _run(coro: Any) -> Any:

@@ -190,6 +190,22 @@ def telegram_health_report() -> dict[str, Any]:
         add_check("bot env", False, "Set TELEGRAM_BOT_TOKEN + TELEGRAM_CHANNEL_ID in .env")
     else:
         add_check("bot env", True, "Token and channel id present")
+        cid_raw = channel_id()
+        if cid_raw.lstrip("-").isdigit() and int(cid_raw) > 0:
+            add_check(
+                "channel id format",
+                False,
+                f"TELEGRAM_CHANNEL_ID={cid_raw} is a user id — use -100xxxxxxxxxx. "
+                "Run: sudo .venv/bin/python list_telegram_channels.py",
+            )
+        elif not str(cid_raw).startswith("-100"):
+            add_check(
+                "channel id format",
+                False,
+                f"TELEGRAM_CHANNEL_ID={cid_raw} should start with -100",
+            )
+        else:
+            add_check("channel id format", True, cid_raw)
         try:
             me = _api("getMe")
             add_check("bot token valid", True, f"@{me.get('username')} (id {me.get('id')})")
