@@ -77,6 +77,7 @@ _TELEGRAM_COLUMNS: tuple[tuple[str, str], ...] = (
     ("telegram_linked_at", "TEXT"),
     ("telegram_channel_joined", "INTEGER NOT NULL DEFAULT 0"),
     ("telegram_link_code", "TEXT"),
+    ("telegram_invite_link", "TEXT"),
 )
 
 
@@ -105,6 +106,7 @@ def _row_to_user(row: sqlite3.Row | None) -> dict[str, Any] | None:
         "telegram_linked_at": row["telegram_linked_at"] if "telegram_linked_at" in keys else None,
         "telegram_channel_joined": bool(row["telegram_channel_joined"]) if "telegram_channel_joined" in keys else False,
         "telegram_link_code": row["telegram_link_code"] if "telegram_link_code" in keys else None,
+        "telegram_invite_link": row["telegram_invite_link"] if "telegram_invite_link" in keys else None,
     }
 
 

@@ -87,8 +87,8 @@ def _user_telegram_row(user_id: int) -> dict[str, Any] | None:
         row = conn.execute(
             """
             SELECT id, email, telegram_username, telegram_user_id, telegram_linked_at,
-                   telegram_channel_joined, telegram_link_code, subscription_expires_at,
-                   email_allowed, is_admin
+                   telegram_channel_joined, telegram_link_code, telegram_invite_link,
+                   subscription_expires_at, email_allowed, is_admin
             FROM users WHERE id=?
             """,
             (user_id,),
@@ -120,14 +120,16 @@ def telegram_public_status(row: dict[str, Any] | None) -> dict[str, Any]:
             "username": username,
             "pollerError": _LAST_POLL_ERROR,
         }
+    invite_link = row.get("telegram_invite_link")
     if joined:
         st = "in_channel"
-    elif tg_id:
-        st = "invite_sent" if not joined else "linked"
+    elif invite_link and username:
+        st = "invite_sent"
     elif username:
-        st = "pending_bot"
+        st = "awaiting_invite"
     else:
         st = "none"
+    direct = _direct_add_status()
     out = {
         "enabled": True,
         "status": st,
@@ -137,10 +139,21 @@ def telegram_public_status(row: dict[str, Any] | None) -> dict[str, Any]:
         "linkedAt": row.get("telegram_linked_at"),
         "botUsername": bot_username(),
         "pollerError": _LAST_POLL_ERROR,
+        "directAddAvailable": direct.get("configured", False),
+        "directAddReady": direct.get("authorized", False),
     }
-    if st == "pending_bot" and code:
-        out["botLink"] = bot_deep_link(f"link_{code}")
+    if invite_link and not joined:
+        out["channelInviteLink"] = invite_link
     return out
+
+
+def _direct_add_status() -> dict[str, Any]:
+    try:
+        from telegram_user_client import user_client_status
+
+        return user_client_status()
+    except Exception:
+        return {"configured": False, "authorized": False}
 
 
 def save_telegram_username(user_id: int, username: str) -> tuple[dict[str, Any] | None, str | None]:
@@ -207,10 +220,29 @@ def link_telegram_account(user_id: int, tg_user_id: int, tg_username: str | None
 
 
 def mark_channel_joined(user_id: int, joined: bool) -> None:
+    now = _iso(_utc_now())
+    with get_conn() as conn:
+        if joined:
+            conn.execute(
+                """
+                UPDATE users
+                SET telegram_channel_joined=1, telegram_invite_link=NULL, updated_at=?
+                WHERE id=?
+                """,
+                (now, user_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE users SET telegram_channel_joined=0, updated_at=? WHERE id=?",
+                (now, user_id),
+            )
+
+
+def save_invite_link(user_id: int, link: str) -> None:
     with get_conn() as conn:
         conn.execute(
-            "UPDATE users SET telegram_channel_joined=?, updated_at=? WHERE id=?",
-            (1 if joined else 0, _iso(_utc_now()), user_id),
+            "UPDATE users SET telegram_invite_link=?, updated_at=? WHERE id=?",
+            (link, _iso(_utc_now()), user_id),
         )
 
 
@@ -220,7 +252,8 @@ def clear_telegram_link(user_id: int) -> None:
             """
             UPDATE users
             SET telegram_username=NULL, telegram_user_id=NULL, telegram_linked_at=NULL,
-                telegram_channel_joined=0, telegram_link_code=NULL, updated_at=?
+                telegram_channel_joined=0, telegram_link_code=NULL, telegram_invite_link=NULL,
+                updated_at=?
             WHERE id=?
             """,
             (_iso(_utc_now()), user_id),
@@ -262,6 +295,21 @@ def create_personal_invite(user_id: int) -> str:
     return link
 
 
+def _telegram_not_in_chat(exc: RuntimeError) -> bool:
+    """User not in channel yet — normal before they accept an invite."""
+    s = str(exc).lower()
+    return any(
+        phrase in s
+        for phrase in (
+            "user not found",
+            "member not found",
+            "not a member",
+            "participant_id_invalid",
+            "chat not found",
+        )
+    )
+
+
 def is_member(tg_user_id: int) -> bool:
     try:
         result = _api("getChatMember", {
@@ -270,7 +318,7 @@ def is_member(tg_user_id: int) -> bool:
         })
         return result.get("status") in ("member", "administrator", "creator")
     except RuntimeError as exc:
-        if "user not found" in str(exc).lower() or "not a member" in str(exc).lower():
+        if _telegram_not_in_chat(exc):
             return False
         raise
 
@@ -278,17 +326,51 @@ def is_member(tg_user_id: int) -> bool:
 def remove_from_channel(tg_user_id: int) -> None:
     """Ban then unban so user is removed but can rejoin with a new invite later."""
     cid = channel_id()
-    _api("banChatMember", {"chat_id": cid, "user_id": tg_user_id})
+    try:
+        _api("banChatMember", {"chat_id": cid, "user_id": tg_user_id})
+    except RuntimeError as exc:
+        if not _telegram_not_in_chat(exc):
+            raise
     try:
         _api("unbanChatMember", {"chat_id": cid, "user_id": tg_user_id, "only_if_banned": True})
     except RuntimeError:
         pass
 
 
+def _try_direct_add(user_id: int, username: str) -> dict[str, Any] | None:
+    """Use admin Telegram account to add @username directly. None → use invite link."""
+    try:
+        from telegram_user_client import DirectInviteError, direct_invite_to_channel, user_client_configured
+    except ImportError:
+        return None
+    if not user_client_configured():
+        return None
+    try:
+        tg_uid = direct_invite_to_channel(username)
+        link_telegram_account(user_id, tg_uid, username)
+        mark_channel_joined(user_id, True)
+        return {
+            "ok": True,
+            "status": "in_channel",
+            "message": f"Added @{username} to the signal channel.",
+            "directAdd": True,
+        }
+    except DirectInviteError as exc:
+        if exc.fallback_invite:
+            return None
+        return {"ok": False, "error": str(exc)}
+    except RuntimeError as exc:
+        msg = str(exc)
+        if "not logged in" in msg.lower() or "session" in msg.lower():
+            return None
+        return {"ok": False, "error": msg}
+
+
 def add_user_to_channel(user_id: int) -> dict[str, Any]:
     """
-    Save username (if needed), link via bot /start, send channel invite.
-    Telegram requires user to press Start on the bot before DM invite works.
+    Add subscriber to the signal channel.
+    Prefers direct add via admin Telegram account (MTProto) when configured;
+    otherwise issues a single-use invite link (no bot /start required).
     """
     if not telegram_enabled():
         return {"ok": False, "error": "Telegram not configured on server"}
@@ -301,50 +383,58 @@ def add_user_to_channel(user_id: int) -> dict[str, Any]:
     if not row or not row.get("telegram_username"):
         return {"ok": False, "error": "Set your Telegram username first"}
 
-    code = row.get("telegram_link_code")
-    if not code:
-        _, err2 = save_telegram_username(user_id, row["telegram_username"])
+    username = row["telegram_username"]
+    if not row.get("telegram_link_code"):
+        _, err2 = save_telegram_username(user_id, username)
         if err2:
             return {"ok": False, "error": err2}
         row = _user_telegram_row(user_id)
-        code = row.get("telegram_link_code")
 
     tg_uid = row.get("telegram_user_id")
-    if not tg_uid:
-        link = bot_deep_link(f"link_{code}")
-        return {
-            "ok": True,
-            "status": "pending_bot",
-            "message": (
-                f"Open @{bot_username()} in Telegram and tap Start. "
-                "We will send your private channel invite automatically."
-            ),
-            "botLink": link,
-            "botUsername": bot_username(),
-        }
+    if tg_uid:
+        try:
+            if is_member(int(tg_uid)):
+                mark_channel_joined(user_id, True)
+                return {
+                    "ok": True,
+                    "status": "in_channel",
+                    "message": "You are already in the signal channel.",
+                }
+        except RuntimeError as exc:
+            return {"ok": False, "error": str(exc)}
 
-    if is_member(int(tg_uid)):
-        mark_channel_joined(user_id, True)
-        return {
-            "ok": True,
-            "status": "in_channel",
-            "message": "You are already in the signal channel.",
-        }
+    direct = _try_direct_add(user_id, username)
+    if direct is not None:
+        return direct
 
-    invite = create_personal_invite(user_id)
-    send_dm(
-        int(tg_uid),
-        (
-            "<b>AlphaANALYSER</b> — private signal channel\n\n"
-            f"Tap to join (single-use link):\n{invite}\n\n"
-            "Link expires in 48 hours."
-        ),
-    )
+    try:
+        invite = create_personal_invite(user_id)
+        save_invite_link(user_id, invite)
+    except RuntimeError as exc:
+        msg = str(exc)
+        if "not enough rights" in msg.lower() or "administrator" in msg.lower():
+            msg = "Bot must be channel admin with invite permission"
+        return {"ok": False, "error": msg}
+
+    if tg_uid:
+        try:
+            send_dm(
+                int(tg_uid),
+                (
+                    "<b>AlphaANALYSER</b> — private signal channel\n\n"
+                    f"Tap to join (single-use link):\n{invite}\n\n"
+                    "Link expires in 48 hours."
+                ),
+            )
+        except RuntimeError:
+            pass
+
     sync_membership(user_id)
     return {
         "ok": True,
         "status": "invite_sent",
-        "message": "Invite link sent to your Telegram. Tap it to join the channel.",
+        "message": "Direct add unavailable — tap the channel link below to join.",
+        "channelInviteLink": invite,
     }
 
 
@@ -369,7 +459,17 @@ def remove_user_from_channel(user_id: int, *, reason: str = "removed") -> dict[s
     tg_uid = row.get("telegram_user_id")
     if tg_uid:
         try:
-            if is_member(int(tg_uid)):
+            removed = False
+            try:
+                from telegram_user_client import direct_remove_from_channel, user_client_status
+
+                st = user_client_status()
+                if st.get("authorized"):
+                    direct_remove_from_channel(int(tg_uid))
+                    removed = True
+            except Exception:
+                pass
+            if not removed and is_member(int(tg_uid)):
                 remove_from_channel(int(tg_uid))
         except RuntimeError as exc:
             return {"ok": False, "error": str(exc)}

@@ -62,6 +62,8 @@ rsync -a --delete \
   --exclude 'backend/.venv' \
   --exclude 'backend/analyser.db' \
   --exclude 'backend/.env' \
+  --exclude 'backend/.telegram_user.session' \
+  --exclude 'backend/.telegram_user.session-journal' \
   "$REPO_DIR/" "$INSTALL_DIR/"
 
 echo "==> Python API (venv + gunicorn)..."

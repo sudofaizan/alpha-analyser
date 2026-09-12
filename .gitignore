@@ -2,6 +2,8 @@ backend/.venv/
 backend/.env
 backend/telegram.env
 backend/analyser.db
+backend/.telegram_user.session
+backend/.telegram_user.session-journal
 frontend/node_modules/
 frontend/dist/
 __pycache__/

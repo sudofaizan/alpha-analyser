@@ -778,6 +778,18 @@ function setTgStatus(text, kind = "") {
   el.className = `cfg-hint tg-status ${kind}`.trim();
 }
 
+function showTgChannelLink(channelLink) {
+  const wrap = $("tgChannelLinkWrap");
+  const link = $("tgChannelLink");
+  if (!wrap || !link) return;
+  if (!channelLink) {
+    wrap.style.display = "none";
+    return;
+  }
+  link.href = channelLink;
+  wrap.style.display = "block";
+}
+
 function showTgBotLink(botLink, botUsername) {
   const wrap = $("tgBotLinkWrap");
   const link = $("tgBotLink");
@@ -800,7 +812,7 @@ function stopTgPoll() {
 
 function startTgPollIfPending(status) {
   stopTgPoll();
-  if (status === "pending_bot" || status === "invite_sent" || status === "linked") {
+  if (status === "pending_bot" || status === "invite_sent" || status === "linked" || status === "awaiting_invite") {
     tgPollTimer = setInterval(() => refreshTelegramUi(true), 4000);
   }
 }
@@ -813,12 +825,16 @@ async function refreshTelegramUi(silent = false) {
     const tg = data.telegram || {};
     if (!data.configured) {
       setTgStatus("Telegram not configured on server (missing bot token)", "err");
-      $("tgBotLinkWrap").style.display = "none";
+      showTgChannelLink(null);
+      showTgBotLink(null);
       stopTgPoll();
       return;
     }
     if (tg.username) $("tgUsername").value = tg.username.startsWith("@") ? tg.username : `@${tg.username}`;
     let msg = telegramStatusLabel(tg);
+    if (tg.directAddReady) {
+      msg = tg.inChannel ? "In signal channel (direct add)" : msg;
+    }
     if (tg.pollerError && tg.status === "pending_bot") {
       msg += ` — server: ${tg.pollerError}`;
     }
@@ -826,11 +842,21 @@ async function refreshTelegramUi(silent = false) {
       msg,
       tg.inChannel ? "ok" : tg.status === "invite_sent" ? "ok" : tg.status === "pending_bot" ? "warn" : "",
     );
-    if (tg.inChannel || tg.status === "invite_sent") {
+    if (tg.inChannel) {
+      showTgChannelLink(null);
       showTgBotLink(null);
-      $("tgBotHint").style.display = "none";
+      if (hint) hint.style.display = "none";
       stopTgPoll();
+    } else if (tg.status === "invite_sent" && tg.channelInviteLink) {
+      showTgBotLink(null);
+      showTgChannelLink(tg.channelInviteLink);
+      if (hint) {
+        hint.style.display = "block";
+        hint.textContent = "Open the link on the same Telegram account as your username.";
+      }
+      startTgPollIfPending(tg.status);
     } else if (tg.status === "pending_bot") {
+      showTgChannelLink(null);
       showTgBotLink(tg.botLink, tg.botUsername);
       if (hint) {
         hint.style.display = "block";
@@ -838,7 +864,8 @@ async function refreshTelegramUi(silent = false) {
       }
       startTgPollIfPending(tg.status);
     } else {
-      $("tgBotLinkWrap").style.display = "none";
+      showTgChannelLink(null);
+      showTgBotLink(null);
       if (hint) hint.style.display = "none";
       stopTgPoll();
     }
@@ -852,12 +879,15 @@ async function checkTelegramConnection() {
   setTgStatus("Checking…");
   try {
     const { ok, data, error } = await connectTelegram(raw);
-    if (!ok && data?.status !== "pending_bot") {
+    if (!ok && data?.status !== "pending_bot" && data?.status !== "invite_sent") {
       setTgStatus(error || data?.error || "Failed", "err");
       return;
     }
+    if (data?.channelInviteLink) showTgChannelLink(data.channelInviteLink);
     await refreshTelegramUi();
-    if (data?.message) setTgStatus(data.message, data.status === "in_channel" || data.status === "invite_sent" ? "ok" : "warn");
+    if (data?.message) {
+      setTgStatus(data.message, data.status === "in_channel" || data.status === "invite_sent" ? "ok" : "warn");
+    }
   } catch (e) {
     setTgStatus(e.message, "err");
   }

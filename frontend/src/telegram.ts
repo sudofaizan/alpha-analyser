@@ -7,10 +7,11 @@ export function telegramStatusLabel(tg) {
   if (!tg?.enabled) return "Telegram not configured on server";
   const map = {
     none: "Not connected",
+    awaiting_invite: "Username saved — click Add to signal channel",
     pending_bot: "Waiting — open bot link below and tap Start",
     linked: "Linked — sending invite…",
     in_channel: "In signal channel",
-    invite_sent: "Invite sent — tap link in Telegram",
+    invite_sent: "Tap the channel link below to join",
     disabled: "Telegram disabled",
   };
   return map[tg.status] || tg.status || "—";
