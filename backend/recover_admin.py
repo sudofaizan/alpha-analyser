@@ -41,13 +41,16 @@ if env.is_file():
         if k and k not in os.environ:
             os.environ[k] = v
 
-from auth_db import count_users, ensure_admin_from_env, get_user_by_email, init_db  # noqa: E402
+from auth_db import DB_PATH, count_users, ensure_admin_from_env, get_user_by_email, init_db  # noqa: E402
 
 if __name__ == "__main__":
     init_db()
     email = os.environ.get("ADMIN_EMAIL", "").strip().lower()
+    print(f"Backend dir: {ROOT}")
+    print(f"Auth DB:     {DB_PATH}")
+    print(f"Env file:    {env if env.is_file() else '(missing — set ADMIN_EMAIL in environment)'}")
     print(f"Users in DB: {count_users()}")
-    print(f"Python: {sys.executable}")
+    print(f"Python:      {sys.executable}")
     ensure_admin_from_env(sync_password=True)
     admin = get_user_by_email(email) if email else None
     if admin and admin.get("is_admin"):
