@@ -817,6 +817,25 @@ function startTgPollIfPending(status) {
   }
 }
 
+function updateTgActions(tg) {
+  const inChannel = !!(tg?.inChannel || tg?.status === "in_channel");
+  const connect = $("btnTgConnect");
+  const check = $("btnTgCheck");
+  const disconnect = $("btnTgDisconnect");
+  const username = $("tgUsername");
+
+  if (connect) connect.style.display = inChannel ? "none" : "";
+  if (check) check.style.display = inChannel ? "none" : "";
+  if (disconnect) {
+    disconnect.style.display = inChannel ? "" : "none";
+    disconnect.textContent = "Remove from channel";
+  }
+  if (username) {
+    username.readOnly = inChannel;
+    username.style.opacity = inChannel ? "0.72" : "";
+  }
+}
+
 async function refreshTelegramUi(silent = false) {
   const hint = $("tgBotHint");
   if (!$("tgUsername")) return;
@@ -827,6 +846,7 @@ async function refreshTelegramUi(silent = false) {
       setTgStatus("Telegram not configured on server (missing bot token)", "err");
       showTgChannelLink(null);
       showTgBotLink(null);
+      updateTgActions({});
       stopTgPoll();
       return;
     }
@@ -869,6 +889,7 @@ async function refreshTelegramUi(silent = false) {
       if (hint) hint.style.display = "none";
       stopTgPoll();
     }
+    updateTgActions(tg);
   } catch (e) {
     if (!silent) setTgStatus(e.message, "err");
   }
@@ -1093,14 +1114,16 @@ $("btnConfigure").addEventListener("click", openConfigure);
 $("btnTgConnect")?.addEventListener("click", () => checkTelegramConnection());
 $("btnTgCheck")?.addEventListener("click", () => checkTelegramConnection());
 $("btnTgDisconnect")?.addEventListener("click", async () => {
-  if (!window.confirm("Remove Telegram channel access?")) return;
+  if (!window.confirm("Remove from signal channel?")) return;
   try {
     await disconnectTelegram();
     $("tgUsername").value = "";
-    setTgStatus("Disconnected from signal channel", "ok");
+    showTgChannelLink(null);
+    showTgBotLink(null);
     $("tgBotHint").style.display = "none";
-    $("tgBotLinkWrap").style.display = "none";
     stopTgPoll();
+    await refreshTelegramUi();
+    setTgStatus("Removed from signal channel", "ok");
   } catch (e) {
     setTgStatus(e.message, "err");
   }
