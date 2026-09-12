@@ -12,26 +12,17 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
-from pathlib import Path
 
-# Load .env / telegram.env like the API does
-for name in (".env", "telegram.env"):
-    p = Path(__file__).resolve().parent / name
-    if p.is_file():
-        for line in p.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            k, _, v = line.partition("=")
-            os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+from load_env import load_backend_env, require_telegram_user_env
+
+load_backend_env()
 
 from telegram_user_client import ensure_session_path, session_path, user_client_configured  # noqa: E402
 
 
 async def main() -> None:
+    require_telegram_user_env()
     if not user_client_configured():
-        print("Set TELEGRAM_USER_API_ID and TELEGRAM_USER_API_HASH in backend/.env first.")
-        print("Create an app at https://my.telegram.org/apps")
         sys.exit(1)
 
     from telethon import TelegramClient

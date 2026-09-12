@@ -11,24 +11,22 @@ from __future__ import annotations
 
 import asyncio
 import os
-from pathlib import Path
+import sys
 
-ROOT = Path(__file__).resolve().parent
-for name in (".env", "telegram.env"):
-    p = ROOT / name
-    if p.is_file():
-        for line in p.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            k, _, v = line.partition("=")
-            os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+from load_env import load_backend_env, require_telegram_user_env
+
+load_backend_env()
+require_telegram_user_env()
 
 from telegram_user_client import _client  # noqa: E402
 
 
 async def main() -> None:
     configured = os.environ.get("TELEGRAM_CHANNEL_ID", "")
+    env_src = "/opt/alpha-analyser/backend/.env" if os.path.isfile("/opt/alpha-analyser/backend/.env") else "backend/.env"
+    print(f"Using env from {env_src}")
+    print(f"Session: {os.environ.get('TELEGRAM_USER_SESSION', '.telegram_user')}\n")
+
     if configured and not str(configured).startswith("-100"):
         print(f"WARNING: TELEGRAM_CHANNEL_ID={configured} does not look like a channel id.")
         print("Channel ids are negative and usually start with -100\n")
@@ -49,4 +47,7 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        sys.exit(0)

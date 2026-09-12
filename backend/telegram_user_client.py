@@ -96,8 +96,14 @@ class DirectInviteError(Exception):
 async def _client():
     from telethon import TelegramClient
 
-    api_id = int(_cfg("TELEGRAM_USER_API_ID"))
+    api_id_raw = _cfg("TELEGRAM_USER_API_ID")
     api_hash = _cfg("TELEGRAM_USER_API_HASH")
+    if not api_id_raw or not api_hash:
+        raise RuntimeError(
+            "TELEGRAM_USER_API_ID/HASH not set — use /opt/alpha-analyser/backend/.env "
+            "and run: cd /opt/alpha-analyser/backend && sudo .venv/bin/python …"
+        )
+    api_id = int(api_id_raw)
     path = str(ensure_session_path())
     client = TelegramClient(path, api_id, api_hash)
     await client.connect()
