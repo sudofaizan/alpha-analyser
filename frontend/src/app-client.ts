@@ -18,11 +18,18 @@ import {
 import {
   displaySignalId,
   fetchSignalHistory,
+  formatTrackingSummary,
   marketStatusClass,
   marketStatusLabel,
   renderHistoryTable,
-  trackingStatusText,
+  renderTrackingTimelineHtml,
 } from "./signal-history";
+import {
+  connectTelegram,
+  disconnectTelegram,
+  fetchTelegramStatus,
+  telegramStatusLabel,
+} from "./telegram";
 import {
   resolveTradeSignal,
   signalSummaryText,
@@ -502,6 +509,17 @@ function updateTradeSignalPanel(nm, symbol, apiSignal = null) {
   $("sigRr").textContent = sig.rr ? `1 : ${sig.rr}` : "—";
   $("sigConf").textContent = sig.confidence != null ? `~${sig.confidence}%` : "—";
   $("sigEntryNote").textContent = sig.entryNote || "";
+  const planEl = $("sigPlan");
+  const plan = sig.tradePlan;
+  if (planEl && plan?.steps?.length) {
+    planEl.classList.remove("hidden");
+    planEl.innerHTML = `<b>${plan.title || "Trade plan"}</b>`
+      + (plan.philosophy ? `<div>${plan.philosophy}</div>` : "")
+      + `<ol>${plan.steps.map((s) => `<li><b>${s.title || s.phase}</b> — ${s.detail}</li>`).join("")}</ol>`;
+  } else if (planEl) {
+    planEl.classList.add("hidden");
+    planEl.innerHTML = "";
+  }
   updateVirtualTrackingPanel(lastActiveVirtualSignal);
 }
 
@@ -513,7 +531,11 @@ function updateMarketBadge(meta) {
   el.textContent = marketStatusLabel(status);
   el.className = `market-badge ${marketStatusClass(status)}`;
   const reason = meta?.market_status_reason;
-  el.title = reason ? `${marketStatusLabel(status)} — ${reason}` : marketStatusLabel(status);
+  const lastCandle = meta?.market_last_candle_at;
+  const tip = [marketStatusLabel(status), reason, lastCandle ? `Last M5: ${lastCandle}` : ""]
+    .filter(Boolean)
+    .join(" — ");
+  el.title = tip;
 }
 
 function updateVirtualTrackingPanel(active) {
@@ -523,13 +545,19 @@ function updateVirtualTrackingPanel(active) {
     idEl.textContent = active ? displaySignalId(active) : "—";
   }
   if (!trackEl) return;
-  if (!$("togTradeSignals")?.checked || !active) {
+  if (!$("togTradeSignals")?.checked || !active?.tracking) {
     trackEl.classList.add("hidden");
+    trackEl.innerHTML = "";
     return;
   }
-  const txt = trackingStatusText(active);
-  const price = active.lastPrice != null ? ` · last ${fmtPrice(active.lastPrice)}` : "";
-  trackEl.textContent = txt ? `${txt}${price}` : "Virtual tracking active";
+  const summary = formatTrackingSummary(active.tracking) || [];
+  const last = active.lastPrice != null ? `Last price ${fmtPrice(active.lastPrice)}` : "";
+  const timeline = renderTrackingTimelineHtml(active.tracking);
+  trackEl.innerHTML = [
+    summary.length ? summary.join("<br>") : "",
+    last ? `<div class="track-note">${last}</div>` : "",
+    timeline,
+  ].filter(Boolean).join("");
   trackEl.classList.remove("hidden");
 }
 
@@ -742,9 +770,39 @@ function updateChartMeta() {
   el.textContent = `${sym} · ${tf} · ${bars} bars${auto}`;
 }
 
+function setTgStatus(text, kind = "") {
+  const el = $("tgStatus");
+  if (!el) return;
+  el.textContent = text || "—";
+  el.className = `cfg-hint tg-status ${kind}`.trim();
+}
+
+async function refreshTelegramUi() {
+  const hint = $("tgBotHint");
+  if (!$("tgUsername")) return;
+  try {
+    const data = await fetchTelegramStatus();
+    const tg = data.telegram || {};
+    if (tg.username) $("tgUsername").value = tg.username.startsWith("@") ? tg.username : `@${tg.username}`;
+    setTgStatus(telegramStatusLabel(tg), tg.inChannel ? "ok" : tg.status === "pending_bot" ? "warn" : "");
+    if (hint) {
+      if (data.configured && tg.status === "pending_bot") {
+        hint.style.display = "block";
+        hint.textContent = `Then open @${tg.botUsername || "bot"} in Telegram and tap Start.`;
+      } else {
+        hint.style.display = "none";
+        hint.textContent = "";
+      }
+    }
+  } catch (e) {
+    setTgStatus(e.message, "err");
+  }
+}
+
 function openConfigure() {
   $("cfgOverlay").classList.add("open");
   $("cfgOverlay").setAttribute("aria-hidden", "false");
+  refreshTelegramUi();
 }
 
 function closeConfigure() {
@@ -937,6 +995,36 @@ $("btnCopySignal").addEventListener("click", async () => {
 
 $("btnLoad").addEventListener("click", () => loadChart(false));
 $("btnConfigure").addEventListener("click", openConfigure);
+$("btnTgConnect")?.addEventListener("click", async () => {
+  const raw = $("tgUsername")?.value?.trim().replace(/^@/, "") || "";
+  setTgStatus("Connecting…");
+  try {
+    const { ok, data, error } = await connectTelegram(raw);
+    if (!ok) {
+      setTgStatus(error || data?.error || "Failed", "err");
+      return;
+    }
+    setTgStatus(data.message || "Done", data.status === "in_channel" ? "ok" : "warn");
+    if (data.botLink) {
+      $("tgBotHint").style.display = "block";
+      $("tgBotHint").innerHTML = `<a href="${data.botLink}" target="_blank" rel="noopener">Open @${data.botUsername} in Telegram</a> and tap Start.`;
+    }
+    await refreshTelegramUi();
+  } catch (e) {
+    setTgStatus(e.message, "err");
+  }
+});
+$("btnTgDisconnect")?.addEventListener("click", async () => {
+  if (!window.confirm("Remove Telegram channel access?")) return;
+  try {
+    await disconnectTelegram();
+    $("tgUsername").value = "";
+    setTgStatus("Disconnected from signal channel", "ok");
+    $("tgBotHint").style.display = "none";
+  } catch (e) {
+    setTgStatus(e.message, "err");
+  }
+});
 $("btnSignalHistory").addEventListener("click", openSignalHistory);
 $("btnHistClose").addEventListener("click", closeSignalHistory);
 $("btnHistDone").addEventListener("click", closeSignalHistory);

@@ -68,11 +68,30 @@ def init_db() -> None:
     from signal_tracker import init_signal_tables  # noqa: WPS433
 
     init_signal_tables()
+    _migrate_telegram_columns()
+
+
+_TELEGRAM_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("telegram_username", "TEXT"),
+    ("telegram_user_id", "INTEGER"),
+    ("telegram_linked_at", "TEXT"),
+    ("telegram_channel_joined", "INTEGER NOT NULL DEFAULT 0"),
+    ("telegram_link_code", "TEXT"),
+)
+
+
+def _migrate_telegram_columns() -> None:
+    with get_conn() as conn:
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(users)")}
+        for name, col_type in _TELEGRAM_COLUMNS:
+            if name not in existing:
+                conn.execute(f"ALTER TABLE users ADD COLUMN {name} {col_type}")
 
 
 def _row_to_user(row: sqlite3.Row | None) -> dict[str, Any] | None:
     if row is None:
         return None
+    keys = row.keys()
     return {
         "id": row["id"],
         "email": row["email"],
@@ -81,6 +100,11 @@ def _row_to_user(row: sqlite3.Row | None) -> dict[str, Any] | None:
         "subscription_expires_at": row["subscription_expires_at"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
+        "telegram_username": row["telegram_username"] if "telegram_username" in keys else None,
+        "telegram_user_id": row["telegram_user_id"] if "telegram_user_id" in keys else None,
+        "telegram_linked_at": row["telegram_linked_at"] if "telegram_linked_at" in keys else None,
+        "telegram_channel_joined": bool(row["telegram_channel_joined"]) if "telegram_channel_joined" in keys else False,
+        "telegram_link_code": row["telegram_link_code"] if "telegram_link_code" in keys else None,
     }
 
 
@@ -106,6 +130,12 @@ def public_user(user: dict[str, Any] | None) -> dict[str, Any] | None:
     if not user:
         return None
     status = access_status(user)
+    try:
+        from telegram_service import telegram_public_status  # noqa: WPS433
+
+        tg = telegram_public_status(user)
+    except Exception:
+        tg = {"enabled": False, "status": "none", "username": user.get("telegram_username")}
     return {
         "id": user["id"],
         "email": user["email"],
@@ -114,6 +144,7 @@ def public_user(user: dict[str, Any] | None) -> dict[str, Any] | None:
         "subscription_expires_at": user["subscription_expires_at"],
         "has_access": status["has_access"],
         "access_reason": status["reason"],
+        "telegram": tg,
     }
 
 

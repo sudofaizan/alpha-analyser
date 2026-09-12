@@ -78,10 +78,11 @@ export function renderHistoryTable(container, signals) {
     const oc = outcomeClass(s.outcome, s.status);
     const label = outcomeLabel(s.outcome, s.status);
     const detail = s.statusDetail ? `<div class="hist-detail">${s.statusDetail}</div>` : "";
+    const track = s.tracking ? renderTrackingTimelineHtml(s.tracking) : "";
     const tp2 = s.tp2 != null ? fmtPrice(s.tp2) : "—";
     return `<tr class="hist-row ${oc}">
       <td class="hist-id">${displaySignalId(s)}</td>
-      <td><span class="hist-outcome ${oc}">${label}</span>${detail}</td>
+      <td><span class="hist-outcome ${oc}">${label}</span>${detail}${track}</td>
       <td>${s.symbol || "—"}</td>
       <td>${s.timeframe || "—"}</td>
       <td class="${s.action === "BUY" ? "buy" : "sell"}">${s.action || "—"}</td>
@@ -103,9 +104,75 @@ export function renderHistoryTable(container, signals) {
   </table>`;
 }
 
+export function fmtTrackingTime(iso) {
+  if (!iso) return null;
+  try {
+    return new Date(iso).toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  } catch (_) {
+    return iso;
+  }
+}
+
+export function trackingEventLabel(event) {
+  const map = {
+    INVOKED: "Order invoked",
+    FILLED: "Order filled",
+    TP1_HIT: "TP1 hit",
+    TP2_HIT: "TP2 hit",
+    SL_HIT: "SL hit",
+    INVALIDATED: "Invalidated",
+    SUPERSEDED: "Superseded",
+    CLOSED: "Closed",
+  };
+  return map[event] || event || "Event";
+}
+
+/** Render ready-made backend tracking — no client-side inference. */
+export function formatTrackingSummary(tracking) {
+  if (!tracking) return null;
+  const lines = [];
+  if (tracking.invokedAt) {
+    lines.push(`Invoked ${fmtTrackingTime(tracking.invokedAt)} @ ${fmtPrice(tracking.invokedPrice)}`);
+  }
+  if (tracking.filledAt) {
+    lines.push(`Filled ${fmtTrackingTime(tracking.filledAt)} @ ${fmtPrice(tracking.filledPrice)}`);
+  } else if (tracking.fillStatus === "PENDING") {
+    lines.push("Fill pending (limit not touched yet)");
+  }
+  if (tracking.tp1HitAt) {
+    lines.push(`TP1 ${fmtTrackingTime(tracking.tp1HitAt)} @ ${fmtPrice(tracking.tp1HitPrice)}`);
+  }
+  if (tracking.tp2HitAt) {
+    lines.push(`TP2 ${fmtTrackingTime(tracking.tp2HitAt)} @ ${fmtPrice(tracking.tp2HitPrice)}`);
+  }
+  if (tracking.slHitAt) {
+    lines.push(`SL ${fmtTrackingTime(tracking.slHitAt)} @ ${fmtPrice(tracking.slHitPrice)}`);
+  }
+  if (tracking.invalidatedAt) {
+    lines.push(`Invalidated ${fmtTrackingTime(tracking.invalidatedAt)} @ ${fmtPrice(tracking.invalidatedPrice)}`);
+  }
+  if (tracking.closedAt) {
+    lines.push(`Closed ${fmtTrackingTime(tracking.closedAt)}`);
+  }
+  return lines.length ? lines : null;
+}
+
+export function renderTrackingTimelineHtml(tracking) {
+  const events = tracking?.timeline;
+  if (!events?.length) return "";
+  return `<ul class="track-timeline">${events.map((ev) => {
+    const price = ev.price != null ? ` @ ${fmtPrice(ev.price)}` : "";
+    const note = ev.note ? `<span class="track-note">${ev.note}</span>` : "";
+    return `<li><b>${trackingEventLabel(ev.event)}</b> ${fmtTrackingTime(ev.at)}${price}${note}</li>`;
+  }).join("")}</ul>`;
+}
+
 export function trackingStatusText(active) {
-  if (!active) return null;
-  if (active.tp1Hit) return "TP1 reached — tracking TP2 / trail";
-  if (active.orderType === "LIMIT") return "Limit pending / tracking fill";
-  return "Virtually tracking SL · TP1 · TP2";
+  return formatTrackingSummary(active?.tracking)?.join(" · ") || null;
 }

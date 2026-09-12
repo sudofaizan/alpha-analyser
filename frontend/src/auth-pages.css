@@ -132,6 +132,17 @@ html, body {
   color: var(--gold);
   margin-bottom: 0.75rem;
 }
+.admin-panel-head {
+  display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .75rem;
+}
+.admin-panel-head h2 { margin-bottom: 0; }
+.admin-subhead {
+  font-size: .68rem; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted); margin: .85rem 0 .45rem;
+}
+.track-stats { font-size: .72rem; color: var(--muted); line-height: 1.6; }
+.track-stats b { color: var(--text); }
+.hist-id { font-family: ui-monospace, Menlo, monospace; font-size: .65rem; color: var(--gold); }
 .admin-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));

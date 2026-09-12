@@ -34,6 +34,8 @@ _load_dotenv()
 from alpha_analyser_engine import HTF_MAP, build_render_spec  # noqa: E402
 from auth_db import ensure_admin_bootstrap, init_db  # noqa: E402
 from auth_routes import auth_bp, admin_bp, subscription_required  # noqa: E402
+from telegram_routes import telegram_bp  # noqa: E402
+from telegram_service import start_subscription_guard, start_telegram_poller  # noqa: E402
 from mt5_upstream import candles_to_bars, fetch_analysis, fetch_candles  # noqa: E402
 from signal_tracker import (  # noqa: E402
     fetch_m5_market_snapshot,
@@ -53,6 +55,7 @@ PORT = int(os.environ.get("PORT", "8090"))
 
 app.register_blueprint(auth_bp)
 app.register_blueprint(admin_bp)
+app.register_blueprint(telegram_bp)
 
 
 def require_key() -> tuple[dict | None, tuple | None]:
@@ -147,6 +150,7 @@ def get_chart_bundle(user):
         result["meta"]["market_status"] = tracking["market"].get("status", "UNKNOWN")
         result["meta"]["market_status_reason"] = tracking["market"].get("reason")
         result["meta"]["market_last_close"] = tracking["market"].get("last_close")
+        result["meta"]["market_last_candle_at"] = tracking["market"].get("lastCandleAt")
         result["signal_tracking"] = {
             "active": public_signal_row(tracking.get("active_signal")),
             "lastPrice": tracking.get("last_price"),
@@ -199,6 +203,8 @@ def market_status(_user):
 init_db()
 ensure_admin_bootstrap()
 start_signal_ticker(interval_sec=45)
+start_telegram_poller()
+start_subscription_guard(interval_sec=120)
 
 if __name__ == "__main__":
     print(f"Alpha Analyser API on :{PORT}")

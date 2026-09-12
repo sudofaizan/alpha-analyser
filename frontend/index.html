@@ -89,6 +89,11 @@
       gap: .55rem .75rem;
     }
     .cfg-toggles { display: flex; flex-direction: column; gap: .45rem; }
+    .tg-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .55rem; }
+    .tg-actions .btn { align-self: center; padding: .4rem .75rem; font-size: .72rem; }
+    .tg-status.ok { color: var(--green); }
+    .tg-status.err { color: var(--red); }
+    .tg-status.warn { color: var(--gold); }
     .cfg-foot {
       display: flex; justify-content: flex-end; gap: .5rem;
       padding: .75rem 1rem; border-top: 1px solid var(--border);
@@ -142,6 +147,15 @@
     .signal-panel .row b { color: var(--muted); font-weight: 500; }
     .signal-panel .scenario { font-size: .68rem; color: var(--gold); margin: .45rem 0 .35rem; line-height: 1.4; }
     .signal-panel .hint { font-size: .62rem; color: var(--muted); margin-top: .35rem; }
+    .signal-plan {
+      margin-top: .5rem; padding: .45rem .5rem; border-radius: 6px;
+      border: 1px solid rgba(240,180,41,.25); background: rgba(240,180,41,.06);
+      font-size: .62rem; line-height: 1.45; color: var(--muted);
+    }
+    .signal-plan.hidden { display: none; }
+    .signal-plan b { color: var(--gold); display: block; margin-bottom: .25rem; font-size: .64rem; }
+    .signal-plan ol { margin: .25rem 0 0 1rem; padding: 0; }
+    .signal-plan li { margin-bottom: .2rem; }
     .signal-panel .btn-copy {
       margin-top: .5rem; width: 100%; border: 1px solid var(--border);
       background: var(--bg); color: var(--text); border-radius: 4px;
@@ -153,6 +167,13 @@
       border-radius: 4px; background: rgba(56,189,248,.08); border: 1px solid rgba(56,189,248,.2);
     }
     .signal-track.hidden { display: none; }
+    .track-timeline {
+      list-style: none; margin: .45rem 0 0; padding: 0; font-size: .62rem; color: var(--muted); line-height: 1.45;
+    }
+    .track-timeline li { margin-bottom: .2rem; }
+    .track-timeline b { color: var(--text); font-weight: 600; }
+    .track-note { display: block; color: var(--muted); font-size: .58rem; margin-top: .05rem; }
+    .hist-table .track-timeline { max-width: 220px; }
     .hist-overlay { z-index: 110; }
     .hist-modal { max-width: min(960px, 96vw); }
     .hist-body { padding: .75rem 1rem 1rem; max-height: 65vh; overflow: auto; }
@@ -370,12 +391,22 @@
               <input type="checkbox" id="togTradeSignals" /> Show order suggestions (Next move)
             </label>
             <p class="cfg-hint">Suggests entry, SL, TP from next-move analysis. Updates on each Load / auto refresh.</p>
-            <div class="cfg-toggles cfg-soon">
-              <span class="cfg-hint" style="display:block;margin-bottom:.35rem">Delivery (coming soon)</span>
-              <label class="pa-toggle sub"><input type="checkbox" checked disabled /> Dashboard</label>
-              <label class="pa-toggle sub"><input type="checkbox" disabled /> Telegram DM</label>
-              <label class="pa-toggle sub"><input type="checkbox" disabled /> MT5 EA auto trade</label>
+          </div>
+          <div class="cfg-section">
+            <h3>Telegram signals</h3>
+            <p class="cfg-hint">Private channel alerts. All Telegram actions run on the server — removed automatically when subscription ends.</p>
+            <div class="cfg-grid" style="margin-top:.55rem">
+              <div class="field" style="grid-column: 1 / -1">
+                <label>Telegram username</label>
+                <input id="tgUsername" type="text" placeholder="@yourusername" autocomplete="off" spellcheck="false" />
+              </div>
             </div>
+            <div class="tg-actions">
+              <button type="button" class="btn btn-gold" id="btnTgConnect">Add to signal channel</button>
+              <button type="button" class="btn btn-ghost" id="btnTgDisconnect">Disconnect</button>
+            </div>
+            <p class="cfg-hint tg-status" id="tgStatus">—</p>
+            <p class="cfg-hint" id="tgBotHint" style="display:none"></p>
           </div>
           <div class="cfg-section">
             <h3>Overlays</h3>
@@ -456,6 +487,7 @@
           <div class="row"><b>R:R</b><span class="val" id="sigRr">—</span></div>
           <div class="row"><b>Confidence</b><span class="val" id="sigConf">—</span></div>
           <div class="hint" id="sigEntryNote">—</div>
+          <div class="signal-plan hidden" id="sigPlan"></div>
           <button type="button" class="btn-copy" id="btnCopySignal">Copy order details</button>
         </div>
         <h3>Price action read</h3>

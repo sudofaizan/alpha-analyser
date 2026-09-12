@@ -20,6 +20,7 @@ from auth_db import (
     update_user_subscription,
     verify_password,
 )
+from signal_tracker import get_admin_tracking_dashboard
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 admin_bp = Blueprint("admin", __name__, url_prefix="/api/admin")
@@ -191,13 +192,40 @@ def admin_update_user(_admin, user_id: int):
     user, err = update_user_subscription(user_id, **kwargs)
     if err:
         return jsonify({"ok": False, "error": err}), 400
+    from auth_db import access_status, get_user_by_id
+    from telegram_service import remove_user_from_channel
+
+    refreshed = get_user_by_id(user_id)
+    if refreshed and not access_status(refreshed)["has_access"]:
+        remove_user_from_channel(user_id, reason="subscription updated")
     return jsonify({"ok": True, "user": user})
+
+
+@admin_bp.route("/users/<int:user_id>/telegram/remove", methods=["POST"])
+@admin_required
+def admin_remove_telegram(_admin, user_id: int):
+    from telegram_service import clear_telegram_link
+
+    result = remove_user_from_channel(user_id, reason="admin removed")
+    if result.get("ok"):
+        clear_telegram_link(user_id)
+    return jsonify(result), (200 if result.get("ok") else 400)
 
 
 @admin_bp.route("/users/<int:user_id>", methods=["DELETE"])
 @admin_required
 def admin_delete_user(_admin, user_id: int):
+    from telegram_service import remove_user_from_channel
+
+    remove_user_from_channel(user_id, reason="user deleted")
     ok, err = delete_user(user_id)
     if not ok:
         return jsonify({"ok": False, "error": err}), 400
     return jsonify({"ok": True})
+
+
+@admin_bp.route("/tracking", methods=["GET"])
+@admin_required
+def admin_tracking(_admin):
+    limit = max(5, min(int(request.args.get("recent", 25)), 100))
+    return jsonify({"ok": True, **get_admin_tracking_dashboard(limit)})

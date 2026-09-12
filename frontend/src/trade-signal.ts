@@ -132,5 +132,10 @@ export function signalSummaryText(sig) {
     sig.scenario,
     sig.entryNote,
   );
+  const plan = sig.tradePlan;
+  if (plan?.summary) {
+    lines.push("", "Plan:", plan.summary);
+    (plan.steps || []).forEach((s) => lines.push(`  ${s.step}. ${s.title}: ${s.detail}`));
+  }
   return lines.join("\n");
 }

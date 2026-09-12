@@ -8,9 +8,13 @@ import {
   getStoredUser,
   requireAuthPage,
 } from "./auth";
+import { displaySignalId } from "./signal-history";
 
 const usersBody = document.getElementById("usersBody");
 const adminMsg = document.getElementById("adminMsg");
+const trackStats = document.getElementById("trackStats");
+const trackActiveBody = document.getElementById("trackActiveBody");
+const trackClosedBody = document.getElementById("trackClosedBody");
 
 function showAdminMsg(text, ok = false) {
   adminMsg.textContent = text;
@@ -30,6 +34,64 @@ function statusBadge(user) {
   return `<span class="badge no">${accessMessage(user.access_reason)}</span>`;
 }
 
+function tgBadge(user) {
+  const tg = user.telegram || {};
+  if (!tg.enabled) return '<span class="badge no">TG off</span>';
+  if (tg.inChannel) return `<span class="badge ok">@${tg.username || "?"}</span>`;
+  if (tg.username) return `<span class="badge admin">@${tg.username}</span>`;
+  return "—";
+}
+
+async function loadTracking() {
+  if (!trackStats) return;
+  const res = await fetch(apiUrl("/api/admin/tracking?recent=20"), { headers: authHeaders() });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.ok) throw new Error(data.error || "Tracking load failed");
+  const eng = data.engine || {};
+  const st = data.stats || {};
+  trackStats.innerHTML = `
+    <span class="badge ${eng.running ? "ok" : "no"}">${eng.running ? "Engine running" : "Engine stopped"}</span>
+    Active: <b>${st.active ?? 0}</b> · Pending fill: ${st.pendingFill ?? 0} · Runners: ${st.runnerPhase ?? 0}
+    · Wins: ${st.wins ?? 0} · Losses: ${st.losses ?? 0}
+    · Last tick: ${eng.lastTickAt || "—"}
+    ${eng.lastTickError ? `<span class="badge no">${eng.lastTickError}</span>` : ""}
+  `;
+  const active = data.activeSignals || [];
+  trackActiveBody.innerHTML = active.length
+    ? active.map((s) => `<tr>
+        <td class="hist-id">${displaySignalId(s)}</td>
+        <td>${s.userEmail || "—"}</td>
+        <td>${s.symbol}</td>
+        <td><span class="badge admin">${s.phase || "—"}</span></td>
+        <td>${s.action}</td>
+        <td>${s.tracking?.fillStatus || "—"}</td>
+        <td>${(s.tracking?.timeline || []).slice(-2).map((e) => e.event).join(" → ") || "—"}</td>
+      </tr>`).join("")
+    : `<tr><td colspan="7">No active virtual signals</td></tr>`;
+  const closed = data.recentClosed || [];
+  trackClosedBody.innerHTML = closed.length
+    ? closed.map((s) => `<tr>
+        <td class="hist-id">${displaySignalId(s)}</td>
+        <td>${s.userEmail || "—"}</td>
+        <td><span class="badge ${s.outcome === "WIN" ? "ok" : s.outcome === "LOSS" ? "no" : "admin"}">${s.outcome || s.status}</span></td>
+        <td>${s.symbol}</td>
+        <td>${s.closedAt ? new Date(s.closedAt).toLocaleString() : "—"}</td>
+      </tr>`).join("")
+    : `<tr><td colspan="5">No closed signals yet</td></tr>`;
+}
+
+async function removeTelegram(userId) {
+  if (!window.confirm("Remove user from Telegram signal channel?")) return;
+  const res = await fetch(apiUrl(`/api/admin/users/${userId}/telegram/remove`), {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.ok) throw new Error(data.error || "Telegram remove failed");
+  showAdminMsg(data.message || "Removed from Telegram", true);
+  await loadUsers();
+}
+
 async function loadUsers() {
   const res = await fetch(apiUrl("/api/admin/users"), { headers: authHeaders() });
   const data = await res.json().catch(() => ({}));
@@ -45,23 +107,28 @@ async function loadUsers() {
           <label><input type="checkbox" data-allow="${u.id}" ${allowedChecked} /> Allow</label>
           <input type="date" data-expiry="${u.id}" value="${expiryVal}" />
           <button type="button" data-save="${u.id}">Save</button>
+          ${u.telegram?.username ? `<button type="button" data-tg-remove="${u.id}">Remove TG</button>` : ""}
           <button type="button" data-del="${u.id}">Delete</button>
         </div>`;
     return `<tr>
       <td>${u.email}</td>
       <td>${u.is_admin ? "Admin" : "User"}</td>
+      <td>${tgBadge(u)}</td>
       <td>${u.email_allowed ? "Yes" : "No"}</td>
       <td>${fmtDate(u.subscription_expires_at)}</td>
       <td>${statusBadge(u)}</td>
       <td>${adminRow}</td>
     </tr>`;
-  }).join("") || `<tr><td colspan="6">No users</td></tr>`;
+  }).join("") || `<tr><td colspan="7">No users</td></tr>`;
 
   usersBody.querySelectorAll("[data-save]").forEach((btn) => {
     btn.addEventListener("click", () => saveUser(Number(btn.getAttribute("data-save"))));
   });
   usersBody.querySelectorAll("[data-del]").forEach((btn) => {
     btn.addEventListener("click", () => deleteUser(Number(btn.getAttribute("data-del"))));
+  });
+  usersBody.querySelectorAll("[data-tg-remove]").forEach((btn) => {
+    btn.addEventListener("click", () => removeTelegram(Number(btn.getAttribute("data-tg-remove"))).catch((e) => showAdminMsg(e.message)));
   });
 }
 
@@ -144,8 +211,12 @@ async function boot() {
   document.getElementById("btnAddUser").addEventListener("click", () => {
     addUser().catch((e) => showAdminMsg(e.message));
   });
+  document.getElementById("btnRefreshTracking")?.addEventListener("click", () => {
+    loadTracking().catch((e) => showAdminMsg(e.message));
+  });
   try {
-    await loadUsers();
+    await Promise.all([loadUsers(), loadTracking()]);
+    setInterval(() => loadTracking().catch(() => {}), 30000);
   } catch (e) {
     showAdminMsg(e.message);
   }

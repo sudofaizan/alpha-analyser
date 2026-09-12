@@ -712,6 +712,91 @@ def _pick_limit_entry(
     return t1
 
 
+def _build_trade_plan(
+    action: str,
+    order_type: str,
+    entry: float,
+    sl: float,
+    tp1: float,
+    tp2: float | None,
+    fmt,
+) -> dict[str, Any]:
+    """Full management plan — half off at TP1, SL to BE, runner for TP2 or nothing."""
+    steps: list[dict[str, Any]] = []
+    if order_type == "LIMIT":
+        steps.append({
+            "step": 1,
+            "phase": "ENTRY",
+            "title": "Wait for limit fill",
+            "detail": f"Place {action} LIMIT @ {fmt(entry)}. Do not chase if price runs away.",
+        })
+    else:
+        steps.append({
+            "step": 1,
+            "phase": "ENTRY",
+            "title": "Enter at market",
+            "detail": f"Execute {action} MARKET near {fmt(entry)}. Confirm spread is acceptable.",
+        })
+
+    steps.append({
+        "step": 2,
+        "phase": "RISK",
+        "title": "Initial stop",
+        "detail": f"Full size. Hard SL @ {fmt(sl)} until TP1 — no trailing, no moving stop early.",
+    })
+
+    if tp2 is not None:
+        steps.append({
+            "step": 3,
+            "phase": "TP1",
+            "title": "Take half · move SL to breakeven",
+            "detail": (
+                f"At TP1 ({fmt(tp1)}): close 50% of position. "
+                f"Move SL on remainder to breakeven ({fmt(entry)})."
+            ),
+        })
+        steps.append({
+            "step": 4,
+            "phase": "RUNNER",
+            "title": "TP2 or nothing",
+            "detail": (
+                f"Let remaining 50% float to TP2 ({fmt(tp2)}) or exit at breakeven. "
+                "No partials beyond half, no greedy trailing — TP2 or flat."
+            ),
+        })
+        summary = (
+            f"Half off @ TP1 ({fmt(tp1)}), SL → BE ({fmt(entry)}), "
+            f"runner targets TP2 ({fmt(tp2)}) or nothing"
+        )
+    else:
+        steps.append({
+            "step": 3,
+            "phase": "TP1",
+            "title": "Full take profit",
+            "detail": f"At TP1 ({fmt(tp1)}): close 100%. No runner — single target setup.",
+        })
+        summary = f"Full exit @ TP1 ({fmt(tp1)}), SL @ {fmt(sl)} until then"
+
+    return {
+        "title": "Trade management plan",
+        "philosophy": (
+            "No greed: bank half at TP1, protect with breakeven, "
+            "let the runner work for TP2 or exit flat."
+        ),
+        "summary": summary,
+        "steps": steps,
+        "rules": [
+            "Close 50% at TP1",
+            f"Move SL to breakeven ({fmt(entry)}) after TP1",
+            "Runner targets TP2 only — no extra partials",
+            "If price returns to BE after TP1, exit remainder flat (no loss on runner)",
+        ] if tp2 is not None else [
+            f"Hard SL @ {fmt(sl)} until TP1",
+            f"Close full position @ TP1 ({fmt(tp1)})",
+        ],
+    }
+
+
 def compute_trade_signal(
     bars: list,
     swings: dict,
@@ -815,6 +900,8 @@ def compute_trade_signal(
     def _fmt(p: float) -> str:
         return f"{p:.2f}" if abs(p) >= 100 else f"{p:.5f}" if abs(p) < 10 else f"{p:.3f}"
 
+    trade_plan = _build_trade_plan(action, order_type, entry, sl, tp1, tp2, _fmt)
+
     return {
         "symbol": symbol,
         "action": action,
@@ -836,6 +923,7 @@ def compute_trade_signal(
         "confirmations": confirm_texts,
         "waitFor": wait_for,
         "currentPrice": round(price, 5),
+        "tradePlan": trade_plan,
     }
 
 

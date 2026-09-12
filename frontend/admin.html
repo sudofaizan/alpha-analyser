@@ -41,6 +41,49 @@
       <div class="auth-msg" id="adminMsg"></div>
     </div>
 
+    <div class="admin-panel" id="trackingPanel">
+      <div class="admin-panel-head">
+        <h2>Virtual tracking engine</h2>
+        <button class="admin-btn" type="button" id="btnRefreshTracking">Refresh</button>
+      </div>
+      <div class="track-stats" id="trackStats">Loading engine status…</div>
+      <div class="admin-table-wrap" style="margin-top:.75rem">
+        <table class="admin-table track-table">
+          <thead>
+            <tr>
+              <th>Signal ID</th>
+              <th>User</th>
+              <th>Symbol</th>
+              <th>Phase</th>
+              <th>Side</th>
+              <th>Fill</th>
+              <th>Tracking progress</th>
+            </tr>
+          </thead>
+          <tbody id="trackActiveBody">
+            <tr><td colspan="7">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="admin-subhead">Recently closed</h3>
+      <div class="admin-table-wrap">
+        <table class="admin-table track-table">
+          <thead>
+            <tr>
+              <th>Signal ID</th>
+              <th>User</th>
+              <th>Outcome</th>
+              <th>Symbol</th>
+              <th>Closed</th>
+            </tr>
+          </thead>
+          <tbody id="trackClosedBody">
+            <tr><td colspan="5">—</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <div class="admin-panel">
       <h2>Users</h2>
       <div class="admin-table-wrap">
@@ -49,6 +92,7 @@
             <tr>
               <th>Email</th>
               <th>Role</th>
+              <th>Telegram</th>
               <th>Allowed</th>
               <th>Expires</th>
               <th>Status</th>
@@ -56,7 +100,7 @@
             </tr>
           </thead>
           <tbody id="usersBody">
-            <tr><td colspan="6">Loading…</td></tr>
+            <tr><td colspan="7">Loading…</td></tr>
           </tbody>
         </table>
       </div>
