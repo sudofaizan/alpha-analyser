@@ -98,6 +98,12 @@ cp "$INSTALL_DIR/systemd/alpha-analyser-api.service" /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable alpha-analyser-api
 systemctl restart alpha-analyser-api
+sleep 2
+
+echo "==> Sync admin from .env (login recovery)..."
+if ! python3 recover_admin.py; then
+  echo "    WARN: admin sync failed — check ADMIN_EMAIL / ADMIN_PASSWORD in ${INSTALL_DIR}/backend/.env"
+fi
 
 # SELinux: allow nginx to proxy to backend
 if command -v setsebool &>/dev/null; then
@@ -130,6 +136,10 @@ echo "  Login:   http://${PUBLIC_IP:-YOUR_EC2_PUBLIC_IP}/login.html"
 echo "  App:     http://${PUBLIC_IP:-YOUR_EC2_PUBLIC_IP}/index.html"
 echo "  Health:  http://${PUBLIC_IP:-YOUR_EC2_PUBLIC_IP}/health"
 echo "  Auth DB: ${INSTALL_DIR}/backend/analyser.db"
+echo "  DB backup: ${INSTALL_DIR}/backend/analyser.db.pre-deploy.bak"
+echo ""
+echo "  Login broken?  sudo python3 ${INSTALL_DIR}/backend/recover_admin.py"
+echo "  Restore users: sudo cp ${INSTALL_DIR}/backend/analyser.db.pre-deploy.bak ${INSTALL_DIR}/backend/analyser.db && sudo systemctl restart alpha-analyser-api"
 echo ""
 echo "  Edit MT5 upstream: ${INSTALL_DIR}/backend/.env"
 echo "  Logs: journalctl -u alpha-analyser-api -f"

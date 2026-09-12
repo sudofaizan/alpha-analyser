@@ -275,16 +275,46 @@ def delete_user(user_id: int) -> tuple[bool, str | None]:
     return True, None
 
 
-def ensure_admin_bootstrap() -> None:
-    """Create first admin from env when DB is empty."""
-    if count_users() > 0:
-        return
+def ensure_admin_from_env(*, sync_password: bool = True) -> None:
+    """
+    Ensure ADMIN_EMAIL exists as admin on every API start.
+    Creates admin if missing; syncs password from ADMIN_PASSWORD when set.
+    Fixes redeploys where DB has users but admin row/password drifted from .env.
+    """
     email = os.environ.get("ADMIN_EMAIL", "").strip().lower()
     password = os.environ.get("ADMIN_PASSWORD", "").strip()
-    if not email or not password:
-        print("auth_db: no users — set ADMIN_EMAIL and ADMIN_PASSWORD to bootstrap admin")
+    if not email:
+        if count_users() == 0:
+            print("auth_db: no users — set ADMIN_EMAIL and ADMIN_PASSWORD in .env")
         return
+
     far = _iso(datetime(2099, 12, 31, tzinfo=timezone.utc))
+    existing = get_user_by_email(email)
+
+    if existing:
+        with get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE users
+                SET is_admin=1, email_allowed=1,
+                    subscription_expires_at=COALESCE(subscription_expires_at, ?),
+                    updated_at=?
+                WHERE id=?
+                """,
+                (far, _iso(_utc_now()), existing["id"]),
+            )
+            if sync_password and password and len(password) >= 6:
+                conn.execute(
+                    "UPDATE users SET password_hash=?, updated_at=? WHERE id=?",
+                    (generate_password_hash(password), _iso(_utc_now()), existing["id"]),
+                )
+        print(f"auth_db: admin synced {email}")
+        return
+
+    if not password or len(password) < 6:
+        print(f"auth_db: admin {email} missing — set ADMIN_PASSWORD (6+ chars) to create")
+        return
+
     user, err = create_user(
         email,
         password,
@@ -296,3 +326,8 @@ def ensure_admin_bootstrap() -> None:
         print(f"auth_db: bootstrapped admin {email}")
     elif err:
         print(f"auth_db: admin bootstrap failed: {err}")
+
+
+def ensure_admin_bootstrap() -> None:
+    """Backward-compatible alias."""
+    ensure_admin_from_env(sync_password=True)
