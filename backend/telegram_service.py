@@ -226,11 +226,21 @@ def telegram_health_report() -> dict[str, Any]:
             except RuntimeError as exc:
                 add_check("bot is channel admin", False, str(exc))
 
+    raw_session = _cfg("TELEGRAM_USER_SESSION", ".telegram_user")
+    if raw_session.startswith("~"):
+        report["directAdd"]["sessionPathWarning"] = (
+            f"TELEGRAM_USER_SESSION={raw_session} expands per user — "
+            f"gunicorn (root) uses {Path(raw_session).expanduser()}, not ec2-user's home. "
+            "Use absolute path: TELEGRAM_USER_SESSION=/home/ec2-user/telegram_user"
+        )
+
     da = report["directAdd"]
     if not da["configured"]:
         add_check("direct add (user API)", False, "Optional — set TELEGRAM_USER_API_ID/HASH")
     else:
         add_check("direct add env", True, "API id/hash set")
+        if report["directAdd"].get("sessionPathWarning"):
+            add_check("session path (no ~)", False, report["directAdd"]["sessionPathWarning"])
         if not da["sessionExists"]:
             add_check(
                 "user session logged in",

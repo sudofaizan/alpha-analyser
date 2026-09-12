@@ -40,6 +40,9 @@ def main() -> None:
     print()
     if h.get("pollerError"):
         print(f"  Poller last error: {h['pollerError']}")
+    if h.get("directAdd", {}).get("sessionPathWarning"):
+        print(f"\n  WARNING: {h['directAdd']['sessionPathWarning']}")
+    print(f"  Session path (this user): {h.get('directAdd', {}).get('sessionPath', '?')}")
 
     print()
     if h.get("ready"):
