@@ -3,7 +3,7 @@
 
 1. Get API id/hash from https://my.telegram.org/apps
 2. Set TELEGRAM_USER_API_ID, TELEGRAM_USER_API_HASH in backend/.env or telegram.env
-3. Run: cd backend && source .venv/bin/activate && python setup_telegram_user.py
+3. Run on EC2: cd /opt/alpha-analyser/backend && sudo .venv/bin/python setup_telegram_user.py
 
 Your account must be admin of the signal channel (TELEGRAM_CHANNEL_ID).
 """
@@ -43,7 +43,7 @@ async def main() -> None:
     run_as = getpass.getuser()
     if run_as != "root":
         print(f"Warning: running as '{run_as}' but gunicorn runs as root.")
-        print("After login, either re-run with: sudo python setup_telegram_user.py")
+        print("After login, re-run with: sudo .venv/bin/python setup_telegram_user.py")
         print("or chmod/chown the session file so root can read it.\n")
 
     ensure_session_path()

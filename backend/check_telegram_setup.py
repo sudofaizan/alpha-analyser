@@ -2,8 +2,7 @@
 """Print Telegram backend health — run on EC2 after deploy.
 
   cd /opt/alpha-analyser/backend
-  source .venv/bin/activate
-  sudo python check_telegram_setup.py   # use sudo — same user as gunicorn (root)
+  sudo .venv/bin/python check_telegram_setup.py   # sudo = same user as gunicorn (root)
 """
 from __future__ import annotations
 

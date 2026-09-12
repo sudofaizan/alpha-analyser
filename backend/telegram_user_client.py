@@ -81,7 +81,7 @@ async def _client():
         await client.disconnect()
         raise RuntimeError(
             "Telegram user session not logged in. On the server run: "
-            "cd backend && source .venv/bin/activate && python setup_telegram_user.py"
+            "cd /opt/alpha-analyser/backend && sudo .venv/bin/python setup_telegram_user.py"
         )
     return client
 

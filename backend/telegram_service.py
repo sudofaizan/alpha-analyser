@@ -235,7 +235,7 @@ def telegram_health_report() -> dict[str, Any]:
             add_check(
                 "user session logged in",
                 False,
-                "Run: sudo python setup_telegram_user.py (as root — gunicorn runs as root)",
+                "Run: sudo .venv/bin/python setup_telegram_user.py",
             )
         elif not da["sessionReadable"]:
             add_check(
@@ -256,7 +256,7 @@ def telegram_health_report() -> dict[str, Any]:
                 add_check(
                     "user session logged in",
                     False,
-                    st.get("error") or "Run sudo python setup_telegram_user.py",
+                    st.get("error") or "Run sudo .venv/bin/python setup_telegram_user.py",
                 )
 
     failed = [c for c in report["checks"] if not c["ok"]]
