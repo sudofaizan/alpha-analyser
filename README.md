@@ -34,6 +34,24 @@ ADMIN_PASSWORD=your-admin-password
 
 4. Open `http://YOUR_EC2_PUBLIC_IP/login.html` — sign in as admin, then open **Admin** to approve users and set subscription expiry dates.
 
+### Update after `git pull` (EC2)
+
+The live site runs from **`/opt/alpha-analyser`**, not your git clone in `~/alpha-analyser`. Never run recovery scripts only in the home folder.
+
+```bash
+cd ~/alpha-analyser
+git pull
+sudo ./deploy-ec2.sh --quick
+```
+
+Or one command:
+
+```bash
+cd ~/alpha-analyser && ./update.sh
+```
+
+This rsyncs code → `/opt/alpha-analyser`, rebuilds the UI, restarts the API, and syncs admin password from `/opt/alpha-analyser/backend/.env`.
+
 5. **Configure MT5 upstream** (if not default):
 
 ```bash
@@ -46,8 +64,8 @@ sudo systemctl restart alpha-analyser-api
 | Key | Default | Purpose |
 |-----|---------|---------|
 | `FLASK_SECRET_KEY` | — | JWT signing secret (required in production) |
-| `ADMIN_EMAIL` | — | First admin bootstrap (only when DB empty) |
-| `ADMIN_PASSWORD` | — | First admin password |
+| `ADMIN_EMAIL` | — | Admin account (created/synced on every deploy) |
+| `ADMIN_PASSWORD` | — | Admin password (synced on every deploy) |
 | `ANALYSER_DB_PATH` | `backend/analyser.db` | SQLite users/subscriptions (copy for backup) |
 | `MT5_VPS_URL` | `http://13.42.76.172:8080` | MT5 REST API |
 | `MT5_API_KEY` | `alphafx` | MT5 API key |
