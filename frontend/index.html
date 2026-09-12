@@ -48,11 +48,6 @@
     .btn-gold { background: var(--gold); color: #1a1200; }
     .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
     .btn-ghost:hover { border-color: var(--gold); color: var(--gold); }
-    .pa-bar {
-      display: flex; flex-wrap: wrap; align-items: center; gap: .75rem 1.25rem;
-      padding: .4rem .75rem; background: #0d1219; border-bottom: 1px solid var(--border);
-      font-size: .75rem;
-    }
     .pa-toggle {
       display: inline-flex; align-items: center; gap: .4rem; cursor: pointer;
       user-select: none; font-weight: 600; color: var(--gold);
@@ -60,13 +55,52 @@
     .pa-toggle input { accent-color: var(--gold); width: 15px; height: 15px; }
     .pa-toggle.sub { color: var(--muted); font-weight: 500; font-size: .72rem; }
     .pa-toggle.sub input { width: 13px; height: 13px; }
-    .pa-divider { width: 1px; height: 18px; background: var(--border); }
-    .legend { display: flex; flex-wrap: wrap; gap: .65rem 1rem; color: var(--muted); font-size: .7rem; }
-    .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: .25rem; vertical-align: middle; }
+    .cfg-overlay {
+      position: fixed; inset: 0; z-index: 100;
+      display: none; align-items: center; justify-content: center;
+      background: rgba(11, 15, 20, 0.82); backdrop-filter: blur(4px);
+      padding: 1rem;
+    }
+    .cfg-overlay.open { display: flex; }
+    .cfg-modal {
+      width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto;
+      background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+    }
+    .cfg-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: .85rem 1rem; border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; background: var(--panel); z-index: 1;
+    }
+    .cfg-head h2 { font-size: .9rem; color: var(--gold); letter-spacing: .04em; }
+    .cfg-close {
+      border: none; background: transparent; color: var(--muted);
+      font-size: 1.25rem; cursor: pointer; line-height: 1; padding: .2rem .35rem;
+    }
+    .cfg-close:hover { color: var(--gold); }
+    .cfg-body { padding: .85rem 1rem 1rem; }
+    .cfg-section { margin-bottom: 1rem; }
+    .cfg-section h3 {
+      font-size: .68rem; text-transform: uppercase; letter-spacing: .08em;
+      color: var(--muted); margin-bottom: .55rem;
+    }
+    .cfg-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: .55rem .75rem;
+    }
+    .cfg-toggles { display: flex; flex-direction: column; gap: .45rem; }
+    .cfg-foot {
+      display: flex; justify-content: flex-end; gap: .5rem;
+      padding: .75rem 1rem; border-top: 1px solid var(--border);
+      position: sticky; bottom: 0; background: var(--panel);
+    }
+    .legend { display: flex; flex-wrap: wrap; gap: .5rem .85rem; color: var(--muted); font-size: .68rem; margin-top: .35rem; }
+    .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: .2rem; vertical-align: middle; }
     .legend .r1 i { background: var(--r1); }
     .legend .r2 i { background: var(--r2); }
     .legend .r3 i { background: var(--r3); }
     .legend .r4 i { background: var(--r4); }
+    .chart-meta { font-size: .72rem; color: var(--muted); margin-left: .5rem; align-self: center; }
     .next-move-box {
       margin-top: .75rem; padding: .5rem; border-radius: 6px;
       border: 1px solid var(--border); background: rgba(15,20,28,.8);
@@ -123,15 +157,36 @@
     .statusbar .err { color: var(--red); }
     a.back { color: var(--gold); text-decoration: none; font-size: .72rem; align-self: center; }
     a.back:hover { text-decoration: underline; }
-    .user-bar {
-      margin-left: auto; display: flex; align-items: center; gap: .65rem;
-      font-size: .72rem; color: var(--muted);
+    .user-strip {
+      display: flex; flex-wrap: wrap; align-items: center; gap: .65rem 1rem;
+      padding: .45rem .75rem; background: #0d1219; border-bottom: 1px solid var(--border);
+      font-size: .75rem;
     }
-    .user-bar a, .user-bar button {
-      color: var(--gold); text-decoration: none; background: none; border: none;
-      cursor: pointer; font: inherit; padding: 0;
+    .user-strip .user-identity { display: flex; flex-direction: column; gap: .1rem; min-width: 0; }
+    .user-strip .user-name {
+      font-weight: 700; color: var(--text); font-size: .82rem;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px;
     }
-    .user-bar a:hover, .user-bar button:hover { text-decoration: underline; }
+    .user-strip .user-email { font-size: .65rem; color: var(--muted); }
+    .sub-badge {
+      display: inline-flex; align-items: center; padding: .25rem .55rem; border-radius: 999px;
+      font-size: .68rem; font-weight: 700; border: 1px solid;
+    }
+    .sub-badge.ok { color: var(--green); border-color: rgba(34,197,94,.35); background: rgba(34,197,94,.1); }
+    .sub-badge.warn { color: var(--gold); border-color: rgba(240,180,41,.35); background: rgba(240,180,41,.1); }
+    .sub-badge.bad { color: var(--red); border-color: rgba(239,68,68,.35); background: rgba(239,68,68,.1); }
+    .sub-badge.admin { color: var(--gold); border-color: rgba(240,180,41,.4); background: rgba(240,180,41,.12); }
+    .user-actions { margin-left: auto; display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+    .user-actions .btn { align-self: center; padding: .35rem .7rem; font-size: .72rem; }
+    .user-actions a {
+      color: var(--gold); text-decoration: none; font-size: .72rem; font-weight: 600;
+    }
+    .user-actions a:hover { text-decoration: underline; }
+    .user-actions button.link {
+      color: var(--muted); background: none; border: none; cursor: pointer;
+      font: inherit; font-size: .72rem; padding: 0;
+    }
+    .user-actions button.link:hover { color: var(--gold); text-decoration: underline; }
     .sub-block {
       position: absolute; inset: 0; z-index: 20;
       display: none; align-items: center; justify-content: center;
@@ -145,7 +200,7 @@
     }
     .sub-block-card h2 { color: var(--red); font-size: 1rem; margin-bottom: .65rem; }
     .sub-block-card p { color: var(--muted); line-height: 1.55; font-size: .82rem; }
-    .app.blocked .topbar, .app.blocked .pa-bar, .app.blocked .statusbar { opacity: .55; pointer-events: none; }
+    .app.blocked .topbar, .app.blocked .user-strip, .app.blocked .statusbar { opacity: .55; pointer-events: none; }
     .app.blocked .workspace { pointer-events: none; opacity: .35; }
     @media (max-width: 900px) {
       .workspace { grid-template-columns: 1fr; }
@@ -165,62 +220,92 @@
   <div class="app">
     <header class="topbar">
       <div class="brand">AlphaANALYSER <span>v2</span></div>
-      <div class="field"><label>Source</label>
-        <select id="dataSource">
-          <option value="api">Live API</option>
-          <option value="local">Local JSON</option>
-        </select>
-      </div>
-      <div class="field"><label>Symbol</label>
-        <input id="symbol" type="text" value="XAUUSD" placeholder="GOLD.i#" style="width:110px" autocomplete="off" spellcheck="false" />
-      </div>
-      <div class="field"><label>Timeframe</label>
-        <select id="timeframe">
-          <option value="M1">M1</option>
-          <option value="M5" selected>M5</option>
-          <option value="M15">M15</option>
-          <option value="M30">M30</option>
-          <option value="H1">H1</option>
-          <option value="H4">H4</option>
-          <option value="D1">D1</option>
-        </select>
-      </div>
-      <div class="field"><label>Bars</label><input id="barCount" type="number" value="500" min="50" max="5000" style="width:72px" /></div>
-      <div class="field" id="serverField"><label>API host</label><input id="apiServer" type="text" placeholder="leave empty on HTTPS" style="width:180px" title="Leave empty when using analyser.alphafx.org — API is same server" /></div>
+      <span class="chart-meta" id="chartMeta">—</span>
       <button class="btn btn-gold" id="btnLoad" type="button">Load</button>
-      <label class="pa-toggle" style="margin-left:.35rem" title="Reload chart every 5 seconds">
-        <input type="checkbox" id="togAutoRefresh" /> Auto 5s
-      </label>
-      <div class="user-bar" id="userBar">
-        <span id="userEmail">—</span>
-        <a href="/admin.html" id="adminLink" style="display:none">Admin</a>
-        <button type="button" id="btnLogout">Logout</button>
-      </div>
     </header>
 
-    <div class="pa-bar">
-      <label class="pa-toggle"><input type="checkbox" id="togPriceAction" checked /> Price action</label>
-      <span class="pa-divider"></span>
-      <label class="pa-toggle sub"><input type="checkbox" id="togR1" checked /> R1 Structure</label>
-      <label class="pa-toggle sub"><input type="checkbox" id="togR2" checked /> R2 Levels</label>
-      <label class="pa-toggle sub"><input type="checkbox" id="togR3" /> R3 Confirm</label>
-      <label class="pa-toggle sub"><input type="checkbox" id="togRsiDiv" checked /> RSI Divergence</label>
-      <label class="pa-toggle sub"><input type="checkbox" id="togPdLevels" checked /> PDH / PDL</label>
-      <span class="pa-divider"></span>
-      <label class="pa-toggle"><input type="checkbox" id="togNextMove" /> Next move</label>
-      <span class="pa-divider"></span>
-      <label class="pa-toggle sub"><input type="checkbox" id="togSmc" /> SMC (FVG · BOS · CHoCH)</label>
-      <label class="pa-toggle sub"><input type="checkbox" id="togPaSmc" /> Price action + SMC</label>
-      <label class="pa-toggle sub"><input type="checkbox" id="togSessions" /> Trading sessions</label>
-      <div class="legend">
-        <span class="r1"><i></i>Wave · BOS · ChoCH</span>
-        <span class="r2"><i></i>Supply / demand · OB</span>
-        <span class="r3"><i></i>Last 2 pin/engulf at levels</span>
-        <span class="r4"><i style="background:#22c55e"></i>RSI div · green bull / red bear</span>
-        <span class="r2"><i style="background:#facc15"></i>PDH / PDL · yellow glow</span>
-        <span class="r4"><i></i>Projected path · T1/T2 · fib</span>
-        <span class="r1" style="margin-left:.5rem"><i style="background:#fbbf24"></i>⚡ inducement</span>
-        <span class="r2" style="margin-left:.5rem"><i style="background:#089981"></i>BB SMC · OB · FVG</span>
+    <div class="user-strip" id="userStrip">
+      <div class="user-identity">
+        <span class="user-name" id="userDisplayName">—</span>
+        <span class="user-email" id="userEmail">—</span>
+      </div>
+      <span class="sub-badge ok" id="subBadge">—</span>
+      <div class="user-actions">
+        <button type="button" class="btn btn-ghost" id="btnConfigure">Configure</button>
+        <a href="/admin.html" id="adminLink" style="display:none">Admin</a>
+        <button type="button" class="link" id="btnLogout">Logout</button>
+      </div>
+    </div>
+
+    <div class="cfg-overlay" id="cfgOverlay" aria-hidden="true">
+      <div class="cfg-modal" role="dialog" aria-labelledby="cfgTitle">
+        <div class="cfg-head">
+          <h2 id="cfgTitle">Configure</h2>
+          <button type="button" class="cfg-close" id="btnCfgClose" aria-label="Close">&times;</button>
+        </div>
+        <div class="cfg-body">
+          <div class="cfg-section">
+            <h3>Chart data</h3>
+            <div class="cfg-grid">
+              <div class="field"><label>Source</label>
+                <select id="dataSource">
+                  <option value="api">Live API</option>
+                  <option value="local">Local JSON</option>
+                </select>
+              </div>
+              <div class="field"><label>Symbol</label>
+                <input id="symbol" type="text" value="XAUUSD" placeholder="GOLD.i#" autocomplete="off" spellcheck="false" />
+              </div>
+              <div class="field"><label>Timeframe</label>
+                <select id="timeframe">
+                  <option value="M1">M1</option>
+                  <option value="M5" selected>M5</option>
+                  <option value="M15">M15</option>
+                  <option value="M30">M30</option>
+                  <option value="H1">H1</option>
+                  <option value="H4">H4</option>
+                  <option value="D1">D1</option>
+                </select>
+              </div>
+              <div class="field"><label>Bars</label>
+                <input id="barCount" type="number" value="500" min="50" max="5000" />
+              </div>
+              <div class="field" id="serverField"><label>API host</label>
+                <input id="apiServer" type="text" placeholder="leave empty on HTTPS" title="Leave empty on HTTPS — uses same server" />
+              </div>
+            </div>
+            <label class="pa-toggle sub" style="margin-top:.65rem" title="Reload chart every 5 seconds">
+              <input type="checkbox" id="togAutoRefresh" /> Auto refresh every 5s
+            </label>
+          </div>
+          <div class="cfg-section">
+            <h3>Overlays</h3>
+            <div class="cfg-toggles">
+              <label class="pa-toggle"><input type="checkbox" id="togPriceAction" /> Price action</label>
+              <label class="pa-toggle sub"><input type="checkbox" id="togR1" /> R1 Structure</label>
+              <label class="pa-toggle sub"><input type="checkbox" id="togR2" /> R2 Levels</label>
+              <label class="pa-toggle sub"><input type="checkbox" id="togR3" /> R3 Confirm</label>
+              <label class="pa-toggle sub"><input type="checkbox" id="togRsiDiv" /> RSI Divergence</label>
+              <label class="pa-toggle sub"><input type="checkbox" id="togPdLevels" /> PDH / PDL</label>
+              <label class="pa-toggle"><input type="checkbox" id="togNextMove" /> Next move projection</label>
+              <label class="pa-toggle sub"><input type="checkbox" id="togSmc" /> SMC (FVG · BOS · CHoCH)</label>
+              <label class="pa-toggle sub"><input type="checkbox" id="togPaSmc" /> Price action + SMC</label>
+              <label class="pa-toggle sub"><input type="checkbox" id="togSessions" /> Trading sessions</label>
+            </div>
+            <div class="legend">
+              <span class="r1"><i></i>Wave · BOS · ChoCH</span>
+              <span class="r2"><i></i>Supply / demand · OB</span>
+              <span class="r3"><i></i>Pin / engulf confirm</span>
+              <span class="r4"><i></i>RSI div</span>
+              <span class="r2"><i style="background:#facc15"></i>PDH / PDL</span>
+              <span class="r4"><i></i>Next move path</span>
+            </div>
+          </div>
+        </div>
+        <div class="cfg-foot">
+          <button type="button" class="btn btn-ghost" id="btnCfgCancel">Close</button>
+          <button type="button" class="btn btn-gold" id="btnCfgApply">Apply &amp; Load</button>
+        </div>
       </div>
     </div>
 

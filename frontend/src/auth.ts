@@ -81,6 +81,39 @@ export async function fetchMe() {
   return data.user;
 }
 
+export function formatUserDisplay(email) {
+  if (!email) return "User";
+  const local = String(email).split("@")[0] || email;
+  return local
+    .replace(/[._-]+/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+export function subscriptionDaysLeft(user) {
+  if (!user) return null;
+  if (user.is_admin) return null;
+  if (!user.subscription_expires_at) return 0;
+  const exp = new Date(user.subscription_expires_at);
+  if (Number.isNaN(exp.getTime())) return 0;
+  const ms = exp.getTime() - Date.now();
+  return Math.max(0, Math.ceil(ms / 86400000));
+}
+
+export function subscriptionLabel(user) {
+  if (!user) return "—";
+  if (user.is_admin) return "Admin · full access";
+  if (!user.has_access) {
+    if (user.access_reason === "expired") return "Subscription expired";
+    if (user.access_reason === "not_allowed") return "Awaiting approval";
+    return "No active subscription";
+  }
+  const days = subscriptionDaysLeft(user);
+  if (days === null) return "Active";
+  if (days === 0) return "Expires today";
+  if (days === 1) return "1 day left";
+  return `${days} days left`;
+}
+
 export function accessMessage(reason) {
   if (reason === "not_allowed") {
     return "Your email is not approved yet. Contact admin to enable access.";

@@ -4,6 +4,11 @@ import {
   accessMessage,
   authHeaders,
   clearSession,
+  fetchMe,
+  formatUserDisplay,
+  getStoredUser,
+  subscriptionDaysLeft,
+  subscriptionLabel,
 } from "./auth";
 import {
   clearOverlays,
@@ -504,26 +509,63 @@ const TOGGLE_IDS = [
   "togNextMove", "togSmc", "togPaSmc", "togSessions", "togAutoRefresh",
 ];
 
+const TOGGLE_DEFAULTS = {
+  togPriceAction: true,
+  togR1: true,
+  togR2: true,
+  togR3: false,
+  togRsiDiv: true,
+  togPdLevels: true,
+  togNextMove: false,
+  togSmc: false,
+  togPaSmc: false,
+  togSessions: false,
+  togAutoRefresh: false,
+};
+
+function settingsUserKey() {
+  const email = currentUser?.email || getStoredUser()?.email;
+  return email ? String(email).toLowerCase() : "_guest";
+}
+
+function readSettingsStore() {
+  try {
+    return JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
+  } catch (_) {
+    return {};
+  }
+}
+
+function userSettingsFromStore(store) {
+  const key = settingsUserKey();
+  if (store[key]) return store[key];
+  if (store.symbol != null || store.togR1 != null) return store;
+  try {
+    const legacy = JSON.parse(localStorage.getItem(LEGACY_SETTINGS_KEY) || "{}");
+    return { ...legacy, ...store };
+  } catch (_) {
+    return {};
+  }
+}
+
 function loadSettings() {
   try {
-    let s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
-    if (!s.server) {
-      const legacy = JSON.parse(localStorage.getItem(LEGACY_SETTINGS_KEY) || "{}");
-      s = { ...legacy, ...s };
-    }
+    const store = readSettingsStore();
+    const s = userSettingsFromStore(store);
     $("apiServer").value = normalizeAnalyserApi(s.server || "");
-    if (s.symbol) $("symbol").value = s.symbol;
-    if (s.timeframe) $("timeframe").value = s.timeframe;
-    if (s.barCount) $("barCount").value = s.barCount;
-    if (s.dataSource) $("dataSource").value = s.dataSource;
+    $("symbol").value = s.symbol || "XAUUSD";
+    $("timeframe").value = s.timeframe || "M5";
+    $("barCount").value = s.barCount || "500";
+    $("dataSource").value = s.dataSource || "api";
     for (const id of TOGGLE_IDS) {
-      if (s[id] != null) $(id).checked = !!s[id];
+      $(id).checked = s[id] != null ? !!s[id] : !!TOGGLE_DEFAULTS[id];
     }
   } catch (_) {
     $("apiServer").value = defaultAnalyserApi();
   }
   if (!$("apiServer").value && !import.meta.env.PROD) $("apiServer").value = defaultAnalyserApi();
   $("serverField").style.display = $("dataSource").value === "api" ? "flex" : "none";
+  updateChartMeta();
 }
 
 function saveSettings() {
@@ -535,15 +577,66 @@ function saveSettings() {
     dataSource: $("dataSource").value,
   };
   for (const id of TOGGLE_IDS) payload[id] = $(id).checked;
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(payload));
+  const key = settingsUserKey();
+  let store = readSettingsStore();
+  if (store.symbol != null || store.togR1 != null) {
+    const flat = userSettingsFromStore(store);
+    store = {};
+    store[key] = flat;
+  }
+  store[key] = payload;
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(store));
+  updateChartMeta();
+}
+
+function updateChartMeta() {
+  const el = $("chartMeta");
+  if (!el) return;
+  const sym = $("symbol")?.value?.trim() || "—";
+  const tf = $("timeframe")?.value || "—";
+  const bars = $("barCount")?.value || "—";
+  const auto = $("togAutoRefresh")?.checked ? " · auto 5s" : "";
+  el.textContent = `${sym} · ${tf} · ${bars} bars${auto}`;
+}
+
+function openConfigure() {
+  $("cfgOverlay").classList.add("open");
+  $("cfgOverlay").setAttribute("aria-hidden", "false");
+}
+
+function closeConfigure() {
+  saveSettings();
+  $("cfgOverlay").classList.remove("open");
+  $("cfgOverlay").setAttribute("aria-hidden", "true");
 }
 
 let currentUser = null;
 let appAccessGranted = false;
 
+function subBadgeClass(user) {
+  if (user?.is_admin) return "admin";
+  if (!user?.has_access) return "bad";
+  const days = subscriptionDaysLeft(user);
+  if (days != null && days <= 3) return "warn";
+  return "ok";
+}
+
 function updateUserBar(user) {
+  $("userDisplayName").textContent = formatUserDisplay(user?.email);
   $("userEmail").textContent = user?.email || "—";
   $("adminLink").style.display = user?.is_admin ? "inline" : "none";
+  const badge = $("subBadge");
+  badge.textContent = subscriptionLabel(user);
+  badge.className = `sub-badge ${subBadgeClass(user)}`;
+}
+
+async function refreshUserSession() {
+  const user = await fetchMe();
+  if (!user) return;
+  currentUser = user;
+  updateUserBar(currentUser);
+  if (!user.has_access) showSubscriptionBlock(user);
+  else hideSubscriptionBlock();
 }
 
 function showSubscriptionBlock(user) {
@@ -678,6 +771,23 @@ function onToggleChange(ev) {
 }
 
 $("btnLoad").addEventListener("click", () => loadChart(false));
+$("btnConfigure").addEventListener("click", openConfigure);
+$("btnCfgClose").addEventListener("click", closeConfigure);
+$("btnCfgCancel").addEventListener("click", closeConfigure);
+$("btnCfgApply").addEventListener("click", () => {
+  saveSettings();
+  syncAutoRefresh();
+  closeConfigure();
+  loadChart(false);
+});
+$("cfgOverlay").addEventListener("click", (ev) => {
+  if (ev.target === $("cfgOverlay")) closeConfigure();
+});
+document.querySelector(".cfg-modal")?.addEventListener("click", (ev) => ev.stopPropagation());
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && $("cfgOverlay").classList.contains("open")) closeConfigure();
+});
+window.addEventListener("beforeunload", () => saveSettings());
 $("togAutoRefresh").addEventListener("change", () => { saveSettings(); syncAutoRefresh(); });
 $("dataSource").addEventListener("change", () => {
   $("serverField").style.display = $("dataSource").value === "api" ? "flex" : "none";
@@ -688,6 +798,7 @@ TOGGLE_IDS.forEach((id) => {
 });
 ["symbol", "timeframe", "barCount", "apiServer"].forEach((id) => {
   $(id).addEventListener("change", saveSettings);
+  $(id).addEventListener("input", saveSettings);
 });
 
 async function probeAnalyserApi() {
@@ -728,4 +839,5 @@ export function startDashboard(user) {
   } else {
     showSubscriptionBlock(currentUser);
   }
+  refreshUserSession();
 }
