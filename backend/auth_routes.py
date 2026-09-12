@@ -224,6 +224,14 @@ def admin_delete_user(_admin, user_id: int):
     return jsonify({"ok": True})
 
 
+@admin_bp.route("/telegram/health", methods=["GET"])
+@admin_required
+def admin_telegram_health(_admin):
+    from telegram_service import telegram_health_report
+
+    return jsonify({"ok": True, "health": telegram_health_report()})
+
+
 @admin_bp.route("/tracking", methods=["GET"])
 @admin_required
 def admin_tracking(_admin):

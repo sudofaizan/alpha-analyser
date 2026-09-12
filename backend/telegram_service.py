@@ -156,6 +156,119 @@ def _direct_add_status() -> dict[str, Any]:
         return {"configured": False, "authorized": False}
 
 
+def telegram_health_report() -> dict[str, Any]:
+    """Server-side Telegram diagnostics (no secrets). Safe for admin API + CLI."""
+    from telegram_user_client import session_path, user_client_configured
+
+    sp = session_path()
+    session_file = Path(str(sp) + ".session")
+    sf_exists = session_file.is_file()
+    sf_readable = os.access(session_file, os.R_OK) if sf_exists else False
+
+    report: dict[str, Any] = {
+        "ready": False,
+        "bot": {
+            "configured": telegram_enabled(),
+            "tokenSet": bool(bot_token()),
+            "channelIdSet": bool(channel_id()),
+            "botUsername": bot_username(),
+        },
+        "directAdd": {
+            "configured": user_client_configured(),
+            "sessionPath": str(session_file),
+            "sessionExists": sf_exists,
+            "sessionReadable": sf_readable,
+        },
+        "pollerError": _LAST_POLL_ERROR,
+        "checks": [],
+    }
+
+    def add_check(name: str, ok: bool, detail: str = "") -> None:
+        report["checks"].append({"name": name, "ok": ok, "detail": detail})
+
+    if not report["bot"]["configured"]:
+        add_check("bot env", False, "Set TELEGRAM_BOT_TOKEN + TELEGRAM_CHANNEL_ID in .env")
+    else:
+        add_check("bot env", True, "Token and channel id present")
+        try:
+            me = _api("getMe")
+            add_check("bot token valid", True, f"@{me.get('username')} (id {me.get('id')})")
+            report["bot"]["alive"] = True
+            report["bot"]["id"] = me.get("id")
+            bot_id = me.get("id")
+        except RuntimeError as exc:
+            add_check("bot token valid", False, str(exc))
+            bot_id = None
+
+        if bot_id:
+            try:
+                chat = _api("getChat", {"chat_id": channel_id()})
+                add_check(
+                    "channel reachable",
+                    True,
+                    f"{chat.get('title')} ({chat.get('type')})",
+                )
+            except RuntimeError as exc:
+                add_check("channel reachable", False, str(exc))
+
+            try:
+                member = _api("getChatMember", {
+                    "chat_id": channel_id(),
+                    "user_id": bot_id,
+                })
+                status = member.get("status", "?")
+                can_invite = member.get("can_invite_users", status in ("administrator", "creator"))
+                add_check(
+                    "bot is channel admin",
+                    status in ("administrator", "creator"),
+                    f"status={status}, can_invite={can_invite}",
+                )
+            except RuntimeError as exc:
+                add_check("bot is channel admin", False, str(exc))
+
+    da = report["directAdd"]
+    if not da["configured"]:
+        add_check("direct add (user API)", False, "Optional — set TELEGRAM_USER_API_ID/HASH")
+    else:
+        add_check("direct add env", True, "API id/hash set")
+        if not da["sessionExists"]:
+            add_check(
+                "user session logged in",
+                False,
+                "Run: sudo python setup_telegram_user.py (as root — gunicorn runs as root)",
+            )
+        elif not da["sessionReadable"]:
+            add_check(
+                "user session readable",
+                False,
+                f"chmod/chown so gunicorn (root) can read {session_file}",
+            )
+        else:
+            st = _direct_add_status()
+            da.update(st)
+            if st.get("authorized"):
+                add_check(
+                    "user session logged in",
+                    True,
+                    f"@{st.get('username')} (id {st.get('userId')})",
+                )
+            else:
+                add_check(
+                    "user session logged in",
+                    False,
+                    st.get("error") or "Run sudo python setup_telegram_user.py",
+                )
+
+    failed = [c for c in report["checks"] if not c["ok"]]
+    required_failed = [
+        c for c in failed
+        if c["name"] not in ("direct add (user API)", "direct add env", "user session logged in", "user session readable")
+    ]
+    report["ready"] = not required_failed
+    report["directAddReady"] = bool(da.get("authorized"))
+    return report
+
+
 def save_telegram_username(user_id: int, username: str) -> tuple[dict[str, Any] | None, str | None]:
     uname = normalize_username(username)
     if not uname or len(uname) < 3:

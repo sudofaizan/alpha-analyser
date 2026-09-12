@@ -16,17 +16,20 @@ sys.path.insert(0, str(ROOT))
 
 
 def _load_dotenv() -> None:
-    env = ROOT / ".env"
-    if not env.is_file():
-        return
-    for line in env.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        k, _, v = line.partition("=")
-        k, v = k.strip(), v.strip().strip('"').strip("'")
-        if k and k not in os.environ:
-            os.environ[k] = v
+    def _read_env(path: Path) -> None:
+        if not path.is_file():
+            return
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, _, v = line.partition("=")
+            k, v = k.strip(), v.strip().strip('"').strip("'")
+            if k and k not in os.environ:
+                os.environ[k] = v
+
+    _read_env(ROOT / ".env")
+    _read_env(ROOT / "telegram.env")
 
 
 _load_dotenv()

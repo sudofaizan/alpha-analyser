@@ -31,7 +31,12 @@ export async function connectTelegram(username) {
     body: JSON.stringify({ username: username || "" }),
   });
   const data = await res.json().catch(() => ({}));
-  return { ok: res.ok && data.ok, data, error: data.error || data.message };
+  const error =
+    data.error ||
+    data.message ||
+    (data.access_reason ? `subscription inactive (${data.access_reason})` : "") ||
+    (!res.ok ? `HTTP ${res.status}` : "");
+  return { ok: res.ok && data.ok, data, error };
 }
 
 export async function disconnectTelegram() {

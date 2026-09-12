@@ -38,6 +38,14 @@ async def main() -> None:
 
     api_id = int(os.environ["TELEGRAM_USER_API_ID"])
     api_hash = os.environ["TELEGRAM_USER_API_HASH"]
+    import getpass
+
+    run_as = getpass.getuser()
+    if run_as != "root":
+        print(f"Warning: running as '{run_as}' but gunicorn runs as root.")
+        print("After login, either re-run with: sudo python setup_telegram_user.py")
+        print("or chmod/chown the session file so root can read it.\n")
+
     ensure_session_path()
     path = str(session_path())
     print(f"Session file: {path}.session")
