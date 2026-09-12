@@ -21,6 +21,11 @@ from auth_db import (
     verify_password,
 )
 from signal_tracker import get_admin_tracking_dashboard
+from subscription_plans import (
+    activate_subscription,
+    list_plans_public,
+    quote_subscription,
+)
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 admin_bp = Blueprint("admin", __name__, url_prefix="/api/admin")
@@ -110,16 +115,88 @@ def subscription_required(view: Callable):
     return wrapped
 
 
+@auth_bp.route("/plans", methods=["GET"])
+def auth_plans():
+    return jsonify({"ok": True, "plans": list_plans_public()})
+
+
+@auth_bp.route("/quote", methods=["POST"])
+def auth_quote():
+    data = request.get_json(silent=True) or {}
+    plan_id = str(data.get("plan_id", "")).strip()
+    referral = str(data.get("referral_code", "")).strip() or None
+    quote, err = quote_subscription(plan_id, referral)
+    if err:
+        return jsonify({"ok": False, "error": err}), 400
+    return jsonify({"ok": True, "quote": quote})
+
+
 @auth_bp.route("/signup", methods=["POST"])
 def signup():
     data = request.get_json(silent=True) or {}
     email = str(data.get("email", "")).strip()
     password = str(data.get("password", ""))
+    plan_id = str(data.get("plan_id", "")).strip()
+    referral = str(data.get("referral_code", "")).strip() or None
+    mock_pay = data.get("mock_pay", True)
+
+    if not plan_id:
+        return jsonify({"ok": False, "error": "select a subscription plan"}), 400
+
+    quote, qerr = quote_subscription(plan_id, referral)
+    if qerr:
+        return jsonify({"ok": False, "error": qerr}), 400
+
     user, err = create_user(email, password)
     if err:
         return jsonify({"ok": False, "error": err}), 400
-    token = _issue_token(user)
-    return jsonify({"ok": True, "token": token, "user": public_user(user)})
+
+    activated, aerr = activate_subscription(
+        int(user["id"]),
+        plan_id,
+        referral,
+        mock_pay=bool(mock_pay),
+    )
+    if aerr:
+        delete_user(int(user["id"]))
+        return jsonify({"ok": False, "error": aerr}), 400
+
+    token = _issue_token(activated)
+    return jsonify({
+        "ok": True,
+        "token": token,
+        "user": public_user(activated),
+        "quote": quote,
+        "payment": {"mock": True, "status": "completed"},
+    })
+
+
+@auth_bp.route("/subscribe", methods=["POST"])
+@login_required
+def subscribe(user):
+    """Mock purchase / renew for logged-in users (real payment page later)."""
+    data = request.get_json(silent=True) or {}
+    plan_id = str(data.get("plan_id", "")).strip()
+    referral = str(data.get("referral_code", "")).strip() or None
+    if not plan_id:
+        return jsonify({"ok": False, "error": "select a subscription plan"}), 400
+    quote, qerr = quote_subscription(plan_id, referral)
+    if qerr:
+        return jsonify({"ok": False, "error": qerr}), 400
+    activated, aerr = activate_subscription(
+        int(user["id"]),
+        plan_id,
+        referral,
+        mock_pay=bool(data.get("mock_pay", True)),
+    )
+    if aerr:
+        return jsonify({"ok": False, "error": aerr}), 400
+    return jsonify({
+        "ok": True,
+        "user": public_user(activated),
+        "quote": quote,
+        "payment": {"mock": True, "status": "completed"},
+    })
 
 
 @auth_bp.route("/login", methods=["POST"])

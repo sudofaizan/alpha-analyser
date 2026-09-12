@@ -69,6 +69,42 @@ def init_db() -> None:
 
     init_signal_tables()
     _migrate_telegram_columns()
+    _migrate_subscription_columns()
+    _migrate_payments_table()
+
+
+_SUBSCRIPTION_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("subscription_plan", "TEXT"),
+    ("referral_code_used", "TEXT"),
+)
+
+
+def _migrate_subscription_columns() -> None:
+    with get_conn() as conn:
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(users)")}
+        for name, col_type in _SUBSCRIPTION_COLUMNS:
+            if name not in existing:
+                conn.execute(f"ALTER TABLE users ADD COLUMN {name} {col_type}")
+
+
+def _migrate_payments_table() -> None:
+    with get_conn() as conn:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS payments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                plan_id TEXT NOT NULL,
+                amount_usd REAL NOT NULL,
+                referral_code TEXT,
+                status TEXT NOT NULL DEFAULT 'completed',
+                mock INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id);
+            """
+        )
 
 
 _TELEGRAM_COLUMNS: tuple[tuple[str, str], ...] = (
@@ -107,6 +143,8 @@ def _row_to_user(row: sqlite3.Row | None) -> dict[str, Any] | None:
         "telegram_channel_joined": bool(row["telegram_channel_joined"]) if "telegram_channel_joined" in keys else False,
         "telegram_link_code": row["telegram_link_code"] if "telegram_link_code" in keys else None,
         "telegram_invite_link": row["telegram_invite_link"] if "telegram_invite_link" in keys else None,
+        "subscription_plan": row["subscription_plan"] if "subscription_plan" in keys else None,
+        "referral_code_used": row["referral_code_used"] if "referral_code_used" in keys else None,
     }
 
 
@@ -144,6 +182,8 @@ def public_user(user: dict[str, Any] | None) -> dict[str, Any] | None:
         "is_admin": user["is_admin"],
         "email_allowed": user["email_allowed"],
         "subscription_expires_at": user["subscription_expires_at"],
+        "subscription_plan": user.get("subscription_plan"),
+        "referral_code_used": user.get("referral_code_used"),
         "has_access": status["has_access"],
         "access_reason": status["reason"],
         "telegram": tg,

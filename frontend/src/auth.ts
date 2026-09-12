@@ -107,11 +107,14 @@ export function subscriptionLabel(user) {
     if (user.access_reason === "not_allowed") return "Awaiting approval";
     return "No active subscription";
   }
+  const plan = user.subscription_plan;
+  if (plan === "lifetime") return "Lifetime · active";
   const days = subscriptionDaysLeft(user);
+  const planLabel = plan ? `${plan} · ` : "";
   if (days === null) return "Active";
-  if (days === 0) return "Expires today";
-  if (days === 1) return "1 day left";
-  return `${days} days left`;
+  if (days === 0) return `${planLabel}expires today`;
+  if (days === 1) return `${planLabel}1 day left`;
+  return `${planLabel}${days} days left`;
 }
 
 export function accessMessage(reason) {
@@ -119,10 +122,10 @@ export function accessMessage(reason) {
     return "Your email is not approved yet. Contact admin to enable access.";
   }
   if (reason === "no_subscription") {
-    return "No active subscription. Contact admin to set your expiry date.";
+    return "No active subscription. Sign up with a plan or renew.";
   }
   if (reason === "expired") {
-    return "Subscription expired. Contact admin.";
+    return "Subscription expired. Renew to continue.";
   }
-  return "Subscription inactive. Contact admin.";
+  return "Subscription inactive.";
 }

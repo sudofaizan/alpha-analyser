@@ -8,9 +8,10 @@
 </head>
 <body>
   <div class="auth-wrap">
-    <form class="auth-card" id="signupForm">
+    <form class="auth-card auth-card-wide" id="signupForm">
       <div class="auth-brand">AlphaANALYSER</div>
-      <div class="auth-sub">Create an account — admin must approve your email before access</div>
+      <div class="auth-sub">Create an account and choose a plan — mock pay for now (USDT checkout coming soon)</div>
+
       <div class="auth-field">
         <label for="email">Email</label>
         <input id="email" type="email" autocomplete="email" required />
@@ -23,7 +24,24 @@
         <label for="password2">Confirm password</label>
         <input id="password2" type="password" autocomplete="new-password" minlength="6" required />
       </div>
-      <button class="auth-btn" type="submit" id="btnSubmit">Create account</button>
+
+      <div class="auth-field">
+        <label>Subscription plan</label>
+        <div class="plan-grid" id="planGrid"></div>
+      </div>
+
+      <div class="auth-field">
+        <label for="referral">Referral code <span class="auth-optional">(optional)</span></label>
+        <input id="referral" type="text" placeholder="e.g. ALPHAFX100" autocomplete="off" spellcheck="false" />
+        <p class="auth-hint">ALPHAFX100 = 100% off day &amp; week plans only</p>
+      </div>
+
+      <div class="price-box" id="priceBox">
+        <span class="price-label">Total</span>
+        <span class="price-value" id="priceValue">—</span>
+      </div>
+
+      <button class="auth-btn" type="submit" id="btnSubmit">Pay &amp; create account</button>
       <div class="auth-msg" id="msg"></div>
       <div class="auth-link">Already registered? <a href="/login.html">Sign in</a></div>
     </form>
